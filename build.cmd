@@ -42,6 +42,11 @@ if "%ARGS:debug=%" neq "%ARGS%" (
 if "%TARGET_ARCH%" equ "arm64" set CL=%CL% /arch:armv8.1
 if "%TARGET_ARCH%" equ "x64" set LINK=%LINK% /FIXED /merge:_RDATA=.rdata
 
+tasklist /FI "IMAGENAME eq wcap-%TARGET_ARCH%.exe" /NH 2>nul | find /I "wcap-%TARGET_ARCH%.exe" >nul && (
+  echo ERROR: wcap-%TARGET_ARCH%.exe is running. Exit the application before building.
+  exit /b 1
+)
+
 call :fxc ResizePassH            || exit /b 1
 call :fxc ResizePassV            || exit /b 1
 call :fxc ResizeLinearPassH      || exit /b 1

@@ -87,7 +87,17 @@ different dither methods.
 Building
 ========
 
-To build the binary from source code, have [Visual Studio][VS] installed, and simply run `build.cmd`.
+The complete and authoritative build procedure is documented in [BUILDING.md](BUILDING.md).
+
+For the standard x64 release build, install Visual Studio Build Tools 2022 with the MSVC x64/x86
+tools and Windows 11 SDK, then run from the repository root:
+
+```powershell
+cmd /c build.cmd x64
+```
+
+This produces `wcap-x64.exe`. Follow `BUILDING.md` for exact component requirements, optional
+build modes, verification steps, and troubleshooting.
 
 License
 =======
