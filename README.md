@@ -133,6 +133,6 @@ a compiled binary, for any purpose, commercial or non-commercial, and by any mea
 [paletteuse]: https://ffmpeg.org/ffmpeg-filters.html#paletteuse
 [H264/AVC]: https://en.wikipedia.org/wiki/Advanced_Video_Coding
 [H265/HEVC]: https://en.wikipedia.org/wiki/High_Efficiency_Video_Coding
-[AV1]: https://en.wikipedia.org/wiki/High_Efficiency_Video_Coding
+[AV1]: https://en.wikipedia.org/wiki/AV1
 [AAC]: https://en.wikipedia.org/wiki/Advanced_Audio_Coding
 [FLAC]: https://en.wikipedia.org/wiki/FLAC
