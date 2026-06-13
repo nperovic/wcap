@@ -231,7 +231,13 @@ static void Config__ApplyDarkWindow(HWND Window)
 
 	WCHAR ClassName[32] = { 0 };
 	GetClassNameW(Window, ClassName, _countof(ClassName));
-	if (lstrcmpiW(ClassName, L"ComboBox") == 0 || lstrcmpiW(ClassName, L"Edit") == 0)
+	if (lstrcmpiW(ClassName, L"Button") == 0 &&
+		(GetWindowLongW(Window, GWL_STYLE) & BS_TYPEMASK) == BS_GROUPBOX)
+	{
+		// The themed group box ignores WM_CTLCOLORBTN and draws dark caption text.
+		SetWindowTheme(Window, L"", L"");
+	}
+	else if (lstrcmpiW(ClassName, L"ComboBox") == 0 || lstrcmpiW(ClassName, L"Edit") == 0)
 	{
 		SetWindowTheme(Window, L"DarkMode_CFD", NULL);
 	}
