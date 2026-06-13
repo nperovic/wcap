@@ -1215,7 +1215,7 @@ BOOL Config_ShowDialog(Config* C)
 	{
 		.Title = WCAP_CONFIG_TITLE,
 		.Font = Taiwan ? "Microsoft JhengHei UI" : "Segoe UI",
-		.FontSize = 9,
+		.FontSize = 10,
 		.Ok = Taiwan ? "確定" : "OK",
 		.Cancel = Taiwan ? "取消" : "Cancel",
 		.Defaults = Taiwan ? "還原預設值" : "Defaults",
