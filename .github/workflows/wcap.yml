@@ -42,7 +42,6 @@ jobs:
           gh release create "${{ github.ref_name }}" `
             "repo/wcap-x64.exe" `
             "repo/wcap-arm64.exe" `
-            --repo "${{ github.repository }}" `
             --title "wcap ${{ github.ref_name }}" `
             --generate-notes `
             --latest
