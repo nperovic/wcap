@@ -89,10 +89,10 @@ static BOOL Config_IsTaiwan(const Config* C);
 
 #define INI_SECTION L"wcap"
 
-#define CONFIG_COLOR_BACKGROUND RGB(30, 30, 30)
-#define CONFIG_COLOR_CONTROL    RGB(45, 45, 48)
-#define CONFIG_COLOR_TEXT       RGB(245, 245, 245)
-#define CONFIG_COLOR_DISABLED   RGB(145, 145, 145)
+#define CONFIG_COLOR_BACKGROUND RGB(24, 25, 28)
+#define CONFIG_COLOR_CONTROL    RGB(38, 40, 45)
+#define CONFIG_COLOR_TEXT       RGB(232, 234, 237)
+#define CONFIG_COLOR_DISABLED   RGB(126, 130, 138)
 
 // control id's
 #define ID_OK                      IDOK     // 1
@@ -158,7 +158,7 @@ static BOOL Config_IsTaiwan(const Config* C);
 #define ROW1H 124
 #define ROW2H 70
 
-#define PADDING 4             // padding for dialog and group boxes
+#define PADDING 6             // padding for dialog and group boxes
 #define BUTTON_WIDTH 64       // normal button width
 #define BUTTON_SMALL_WIDTH 14 // small button width
 #define ITEM_HEIGHT 14        // control item height
@@ -182,6 +182,76 @@ static const int gValidVideoProfiles[][4] =
 static HWND gDialogWindow;
 static HBRUSH gConfigBackgroundBrush;
 static HBRUSH gConfigControlBrush;
+
+typedef enum
+{
+	CONFIG_APP_MODE_DEFAULT,
+	CONFIG_APP_MODE_ALLOW_DARK,
+	CONFIG_APP_MODE_FORCE_DARK,
+	CONFIG_APP_MODE_FORCE_LIGHT,
+	CONFIG_APP_MODE_MAX,
+}
+Config__PreferredAppMode;
+
+typedef Config__PreferredAppMode (WINAPI *Config__SetPreferredAppModeProc)(Config__PreferredAppMode Mode);
+typedef BOOL (WINAPI *Config__AllowDarkModeForWindowProc)(HWND Window, BOOL Allow);
+typedef void (WINAPI *Config__FlushMenuThemesProc)(void);
+
+static Config__AllowDarkModeForWindowProc gConfigAllowDarkModeForWindow;
+static Config__FlushMenuThemesProc gConfigFlushMenuThemes;
+
+static void Config_EnableDarkMode(void)
+{
+	HMODULE Theme = LoadLibraryW(L"uxtheme.dll");
+	if (!Theme)
+	{
+		return;
+	}
+
+	// Windows 10 1903+ exports these dark-mode functions by ordinal only.
+	Config__SetPreferredAppModeProc SetPreferredAppMode =
+		(Config__SetPreferredAppModeProc)GetProcAddress(Theme, MAKEINTRESOURCEA(135));
+	gConfigAllowDarkModeForWindow =
+		(Config__AllowDarkModeForWindowProc)GetProcAddress(Theme, MAKEINTRESOURCEA(133));
+	gConfigFlushMenuThemes =
+		(Config__FlushMenuThemesProc)GetProcAddress(Theme, MAKEINTRESOURCEA(136));
+
+	if (SetPreferredAppMode)
+	{
+		SetPreferredAppMode(CONFIG_APP_MODE_FORCE_DARK);
+	}
+}
+
+static void Config__ApplyDarkWindow(HWND Window)
+{
+	if (gConfigAllowDarkModeForWindow)
+	{
+		gConfigAllowDarkModeForWindow(Window, TRUE);
+	}
+
+	WCHAR ClassName[32] = { 0 };
+	GetClassNameW(Window, ClassName, _countof(ClassName));
+	if (lstrcmpiW(ClassName, L"ComboBox") == 0 || lstrcmpiW(ClassName, L"Edit") == 0)
+	{
+		SetWindowTheme(Window, L"DarkMode_CFD", NULL);
+	}
+	else
+	{
+		SetWindowTheme(Window, L"DarkMode_Explorer", NULL);
+	}
+}
+
+static void Config_RefreshDarkMenus(HWND Window)
+{
+	if (gConfigAllowDarkModeForWindow)
+	{
+		gConfigAllowDarkModeForWindow(Window, TRUE);
+	}
+	if (gConfigFlushMenuThemes)
+	{
+		gConfigFlushMenuThemes();
+	}
+}
 
 static BOOL Config_IsTaiwan(const Config* C)
 {
@@ -486,13 +556,17 @@ static LRESULT CALLBACK Config__DialogProc(HWND Window, UINT Message, WPARAM WPa
 		SetWindowLongPtrW(Window, GWLP_USERDATA, (LONG_PTR)C);
 
 		BOOL DarkMode = TRUE;
-		DwmSetWindowAttribute(Window, 20, &DarkMode, sizeof(DarkMode));
+		if (FAILED(DwmSetWindowAttribute(Window, 20, &DarkMode, sizeof(DarkMode))))
+		{
+			DwmSetWindowAttribute(Window, 19, &DarkMode, sizeof(DarkMode));
+		}
 		gConfigBackgroundBrush = CreateSolidBrush(CONFIG_COLOR_BACKGROUND);
 		gConfigControlBrush = CreateSolidBrush(CONFIG_COLOR_CONTROL);
 
+		Config__ApplyDarkWindow(Window);
 		for (HWND Control = GetWindow(Window, GW_CHILD); Control; Control = GetWindow(Control, GW_HWNDNEXT))
 		{
-			SetWindowTheme(Control, L"DarkMode_Explorer", NULL);
+			Config__ApplyDarkWindow(Control);
 		}
 
 		SendDlgItemMessageW(Window, ID_VIDEO_CODEC, CB_ADDSTRING, 0, (LPARAM)L"H264 / AVC");
@@ -808,7 +882,7 @@ static void Config__DoDialogLayout(const Config__DialogLayout* Layout, BYTE* Dat
 	int ItemCount = 3;
 
 	int ButtonX = PADDING + COL10W + COL11W + PADDING - 3 * (PADDING + BUTTON_WIDTH);
-	int ButtonY = PADDING + ROW0H + ROW1H + ROW2H + PADDING;
+	int ButtonY = PADDING + ROW0H + PADDING + ROW1H + PADDING + ROW2H + PADDING;
 
 	DLGITEMTEMPLATE* OkData = Config__Align(Data, sizeof(DWORD));
 	Data = Config__DoDialogItem(Data, Layout->Ok, ID_OK, CONTROL_BUTTON, WS_TABSTOP | BS_DEFPUSHBUTTON, ButtonX, ButtonY, BUTTON_WIDTH, ITEM_HEIGHT);
@@ -911,7 +985,7 @@ static void Config__DoDialogLayout(const Config__DialogLayout* Layout, BYTE* Dat
 		.style = DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU,
 		.cdit = ItemCount,
 		.cx = PADDING + COL10W + PADDING + COL11W + PADDING,
-		.cy = PADDING + ROW0H + PADDING + ROW1H + PADDING + ROW2H + ITEM_HEIGHT,
+		.cy = ButtonY + ITEM_HEIGHT + PADDING,
 	};
 
 	Assert(Data <= End);
@@ -1170,7 +1244,7 @@ BOOL Config_ShowDialog(Config* C)
 			},
 			{
 				.Caption = Taiwan ? "視訊(&V)" : "&Video",
-				.Rect = { 0, ROW0H, COL10W, ROW1H },
+				.Rect = { 0, ROW0H + PADDING, COL10W, ROW1H },
 				.Items = (Config__DialogItem[])
 				{
 					{ Taiwan ? "Gamma 校正縮放(&G)" : "&Gamma Correct Resize",                  ID_VIDEO_GAMMA_RESIZE ,    ITEM_CHECKBOX     },
@@ -1186,7 +1260,7 @@ BOOL Config_ShowDialog(Config* C)
 			},
 			{
 				.Caption = Taiwan ? "音訊(&A)" : "&Audio",
-				.Rect = { COL10W + PADDING, ROW0H, COL11W, ROW1H },
+				.Rect = { COL10W + PADDING, ROW0H + PADDING, COL11W, ROW1H },
 				.Items = (Config__DialogItem[])
 				{
 					{ Taiwan ? "擷取音訊(&D)" : "Capture Au&dio",                              ID_AUDIO_CAPTURE,           ITEM_CHECKBOX     },
@@ -1200,7 +1274,7 @@ BOOL Config_ShowDialog(Config* C)
 			},
 			{
 				.Caption = Taiwan ? "快捷鍵與語言(&T)" : "Shor&tcuts & Language",
-				.Rect = { 0, ROW0H + ROW1H, COL00W + PADDING + COL01W, ROW2H },
+				.Rect = { 0, ROW0H + PADDING + ROW1H + PADDING, COL00W + PADDING + COL01W, ROW2H },
 				.Items = (Config__DialogItem[])
 				{
 					{ Taiwan ? "擷取螢幕" : "Capture Monitor", ID_SHORTCUT_MONITOR, ITEM_HOTKEY, 64 },

@@ -1010,6 +1010,7 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 			POINT Mouse;
 			GetCursorPos(&Mouse);
 
+			Config_RefreshDarkMenus(Window);
 			SetForegroundWindow(Window);
 			int Command = TrackPopupMenu(Menu, TPM_RETURNCMD | TPM_NONOTIFY, Mouse.x, Mouse.y, 0, Window, NULL);
 			if (Command == CMD_WCAP)
@@ -1416,6 +1417,8 @@ void WinMainCRTStartup()
 		MessageBoxW(NULL, L"Windows 10 Version 1903, May 2019 Update (19H1) or newer is required!\n\n需要 Windows 10 版本 1903（2019 年 5 月更新，19H1）或更新版本。", WCAP_TITLE, MB_ICONEXCLAMATION);
 		ExitProcess(0);
 	}
+
+	Config_EnableDarkMode();
 
 	GetModuleFileNameW(NULL, gConfigPath, _countof(gConfigPath));
 	PathRenameExtensionW(gConfigPath, L".ini");
