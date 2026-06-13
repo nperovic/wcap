@@ -204,7 +204,8 @@ static void StartRecording(ID3D11Device* Device, HWND Window)
 	int Error = SHCreateDirectoryExW(NULL, gConfig.OutputFolder, NULL);
 	if (Error != ERROR_SUCCESS && Error != ERROR_FILE_EXISTS && Error != ERROR_ALREADY_EXISTS)
 	{
-		ShowNotification(L"Cannot create output folder!", L"Cannot Start Recording", NIIF_WARNING);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"無法建立輸出資料夾。" : L"Cannot create output folder!",
+			Config_IsTaiwan(&gConfig) ? L"無法開始錄影" : L"Cannot Start Recording", NIIF_WARNING);
 		ScreenCapture_Stop(&gCapture);
 		ID3D11Device_Release(Device);
 		return;
@@ -247,7 +248,8 @@ static void StartRecording(ID3D11Device* Device, HWND Window)
 		HWND ApplicationWindow = gConfig.ApplicationLocalAudio && AudioCapture_CanCaptureApplicationLocal() ? Window : NULL;
 		if (!AudioCapture_Start(&gAudio, ApplicationWindow))
 		{
-			ShowNotification(L"Cannot capture audio!", L"Cannot Start Recording", NIIF_WARNING);
+			ShowNotification(Config_IsTaiwan(&gConfig) ? L"無法擷取音訊。" : L"Cannot capture audio!",
+				Config_IsTaiwan(&gConfig) ? L"無法開始錄影" : L"Cannot Start Recording", NIIF_WARNING);
 			ScreenCapture_Stop(&gCapture);
 			ID3D11Device_Release(Device);
 			return;
@@ -392,7 +394,8 @@ static ID3D11Device* CreateDevice(void)
 	D3D_DRIVER_TYPE Driver = Adapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE;
 	if (FAILED(D3D11CreateDevice(Adapter, Driver, NULL, flags, (D3D_FEATURE_LEVEL[]) { D3D_FEATURE_LEVEL_11_0 }, 1, D3D11_SDK_VERSION, &Device, NULL, NULL)))
 	{
-		ShowNotification(L"Cannot to create D3D11 device!", L"Error", NIIF_ERROR);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"無法建立 D3D11 裝置。" : L"Cannot create D3D11 device!",
+			Config_IsTaiwan(&gConfig) ? L"錯誤" : L"Error", NIIF_ERROR);
 		Device = NULL;
 	}
 	if (Adapter)
@@ -419,7 +422,8 @@ static void CaptureWindow(void)
 	HWND Window = GetForegroundWindow();
 	if (Window == NULL)
 	{
-		ShowNotification(L"No window is selected!", L"Cannot Start Recording", NIIF_WARNING);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"尚未選取視窗。" : L"No window is selected!",
+			Config_IsTaiwan(&gConfig) ? L"無法開始錄影" : L"Cannot Start Recording", NIIF_WARNING);
 		return;
 	}
 
@@ -437,14 +441,16 @@ static void CaptureWindow(void)
 
 	if (Affinity != WDA_NONE)
 	{
-		ShowNotification(L"Window is excluded from capture!", L"Cannot Start Recording", NIIF_WARNING);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"此視窗已設為不允許擷取。" : L"Window is excluded from capture!",
+			Config_IsTaiwan(&gConfig) ? L"無法開始錄影" : L"Cannot Start Recording", NIIF_WARNING);
 		return;
 	}
 
 	LONG ExStyle = GetWindowLongW(Window, GWL_EXSTYLE);
 	if (ExStyle & WS_EX_TOOLWINDOW)
 	{
-		ShowNotification(L"Cannot capture toolbar window!", L"Cannot Start Recording", NIIF_WARNING);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"無法擷取工具列視窗。" : L"Cannot capture toolbar window!",
+			Config_IsTaiwan(&gConfig) ? L"無法開始錄影" : L"Cannot Start Recording", NIIF_WARNING);
 		return;
 	}
 
@@ -457,7 +463,8 @@ static void CaptureWindow(void)
 	if (!ScreenCapture_CreateForWindow(&gCapture, Device, Window, gConfig.OnlyClientArea, !gConfig.KeepRoundedWindowCorners))
 	{
 		ID3D11Device_Release(Device);
-		ShowNotification(L"Cannot record selected window!", L"Error", NIIF_WARNING);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"無法錄製選取的視窗。" : L"Cannot record selected window!",
+			Config_IsTaiwan(&gConfig) ? L"錯誤" : L"Error", NIIF_WARNING);
 		return;
 	}
 
@@ -472,7 +479,8 @@ static void CaptureMonitor(void)
 	HMONITOR Monitor = MonitorFromPoint(Mouse, MONITOR_DEFAULTTONULL);
 	if (Monitor == NULL)
 	{
-		ShowNotification(L"Unknown monitor!", L"Cannot Start Recording", NIIF_WARNING);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"找不到指定的螢幕。" : L"Unknown monitor!",
+			Config_IsTaiwan(&gConfig) ? L"無法開始錄影" : L"Cannot Start Recording", NIIF_WARNING);
 		return;
 	}
 
@@ -484,7 +492,8 @@ static void CaptureMonitor(void)
 
 	if (!ScreenCapture_CreateForMonitor(&gCapture, Device, Monitor, NULL))
 	{
-		ShowNotification(L"Cannot record selected monitor!", L"Error", NIIF_WARNING);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"無法錄製選取的螢幕。" : L"Cannot record selected monitor!",
+			Config_IsTaiwan(&gConfig) ? L"錯誤" : L"Error", NIIF_WARNING);
 		return;
 	}
 
@@ -499,7 +508,8 @@ static void CaptureRegionInit(void)
 	HMONITOR Monitor = MonitorFromPoint(Mouse, MONITOR_DEFAULTTONULL);
 	if (Monitor == NULL)
 	{
-		ShowNotification(L"Unknown monitor!", L"Cannot Start Recording", NIIF_WARNING);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"找不到指定的螢幕。" : L"Unknown monitor!",
+			Config_IsTaiwan(&gConfig) ? L"無法開始錄影" : L"Cannot Start Recording", NIIF_WARNING);
 		return;
 	}
 
@@ -509,7 +519,8 @@ static void CaptureRegionInit(void)
 	HDC DeviceContext = CreateDCW(L"DISPLAY", Info.szDevice, NULL, NULL);
 	if (DeviceContext == NULL)
 	{
-		ShowNotification(L"Error getting HDC of monitor!", L"Cannot Start Recording", NIIF_WARNING);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"無法取得螢幕的 HDC。" : L"Error getting HDC of monitor!",
+			Config_IsTaiwan(&gConfig) ? L"無法開始錄影" : L"Cannot Start Recording", NIIF_WARNING);
 		return;
 	}
 
@@ -623,7 +634,8 @@ static void CaptureRegion(void)
 
 	if (!ScreenCapture_CreateForMonitor(&gCapture, Device, gRectMonitor, &Rect))
 	{
-		ShowNotification(L"Cannot record monitor!", L"Error", NIIF_WARNING);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"無法錄製螢幕。" : L"Cannot record monitor!",
+			Config_IsTaiwan(&gConfig) ? L"錯誤" : L"Error", NIIF_WARNING);
 		CaptureRegionRelease();
 		return;
 	}
@@ -991,8 +1003,9 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 
 			AppendMenuW(Menu, MF_STRING, CMD_WCAP, WCAP_TITLE);
 			AppendMenuW(Menu, MF_SEPARATOR, 0, NULL);
-			AppendMenuW(Menu, MF_STRING | (gRecording ? MF_DISABLED : 0), CMD_SETTINGS, L"Settings");
-			AppendMenuW(Menu, MF_STRING, CMD_QUIT, L"Exit");
+			AppendMenuW(Menu, MF_STRING | (gRecording ? MF_DISABLED : 0), CMD_SETTINGS,
+				Config_IsTaiwan(&gConfig) ? L"設定" : L"Settings");
+			AppendMenuW(Menu, MF_STRING, CMD_QUIT, Config_IsTaiwan(&gConfig) ? L"結束" : L"Exit");
 
 			POINT Mouse;
 			GetCursorPos(&Mouse);
@@ -1085,7 +1098,9 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 			StrFormatByteSizeW(FileSize, SizeText, _countof(SizeText));
 
 			WCHAR Text[1024];
-			StrFormat(Text, L"Recording: %dx%d @ %.2f\nLength: %ls\nBitrate: %u kbit/s\nSize: %ls\nFramedrop: %u",
+			StrFormat(Text, Config_IsTaiwan(&gConfig)
+				? L"錄影中：%dx%d @ %.2f\n長度：%ls\n位元率：%u kbit/s\n大小：%ls\n漏畫格：%u"
+				: L"Recording: %dx%d @ %.2f\nLength: %ls\nBitrate: %u kbit/s\nSize: %ls\nFramedrop: %u",
 				gEncoder.OutputWidth, gEncoder.OutputHeight,
 				(float)gEncoder.FramerateNum / (float)gEncoder.FramerateDen,
 				LengthText,
@@ -1107,7 +1122,7 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 	}
 	else if (Message == WM_WCAP_ALREADY_RUNNING)
 	{
-		ShowNotification(L"wcap is already running!", NULL, NIIF_INFO);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"wcap 已在執行中。" : L"wcap is already running!", NULL, NIIF_INFO);
 		return 0;
 	}
 	else if (Message == WM_TASKBARCREATED)
@@ -1166,11 +1181,12 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 					SetTextAlign(Context, TA_BOTTOM | TA_LEFT);
 					SetTextColor(Context, RGB(255, 255, 255));
 
-					const WCHAR TextResize[] = L"Resize:  ";
+					LPCWSTR TextResize = Config_IsTaiwan(&gConfig) ? L"調整大小：  " : L"Resize:  ";
 
 					SIZE Size;
-					GetTextExtentPoint32W(Context, TextResize, _countof(TextResize) - 1, &Size);
-					ExtTextOutW(Context, X0, Y0, 0, NULL, TextResize, _countof(TextResize) - 1, NULL);
+					int TextResizeLength = lstrlenW(TextResize);
+					GetTextExtentPoint32W(Context, TextResize, TextResizeLength, &Size);
+					ExtTextOutW(Context, X0, Y0, 0, NULL, TextResize, TextResizeLength, NULL);
 
 					int X = X0;
 					SelectObject(Context, gFont);
@@ -1209,11 +1225,13 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 					SelectObject(Context, GetStockObject(DC_PEN));
 					SelectObject(Context, GetStockObject(DC_BRUSH));
 
-					const WCHAR Line1[] = L"Select region with the mouse and press ENTER to start capture.";
-					const WCHAR Line2[] = L"Press ESC to cancel.";
+					LPCWSTR Line1 = Config_IsTaiwan(&gConfig)
+						? L"請用滑鼠選取區域，然後按 Enter 開始錄影。"
+						: L"Select region with the mouse and press ENTER to start capture.";
+					LPCWSTR Line2 = Config_IsTaiwan(&gConfig) ? L"按 Esc 取消。" : L"Press ESC to cancel.";
 
 					const WCHAR* Lines[] = { Line1, Line2 };
-					const int LineLengths[] = { _countof(Line1) - 1, _countof(Line2) - 1 };
+					const int LineLengths[] = { lstrlenW(Line1), lstrlenW(Line2) };
 					int Widths[_countof(Lines)];
 					int Height;
 
@@ -1395,7 +1413,7 @@ void WinMainCRTStartup()
 
 	if (!ScreenCapture_IsSupported())
 	{
-		MessageBoxW(NULL, L"Windows 10 Version 1903, May 2019 Update (19H1) or newer is required!", WCAP_TITLE, MB_ICONEXCLAMATION);
+		MessageBoxW(NULL, L"Windows 10 Version 1903, May 2019 Update (19H1) or newer is required!\n\n需要 Windows 10 版本 1903（2019 年 5 月更新，19H1）或更新版本。", WCAP_TITLE, MB_ICONEXCLAMATION);
 		ExitProcess(0);
 	}
 
@@ -1451,7 +1469,9 @@ void WinMainCRTStartup()
 	if (!EnableHotKeys())
 	{
 		MessageBoxW(NULL,
-			L"Cannot register wcap keyboard shortcuts.\nSome other application might already use shorcuts.\nPlease check & adjust the settings!",
+			Config_IsTaiwan(&gConfig)
+				? L"無法註冊 wcap 快捷鍵。\n其他應用程式可能已使用相同的快捷鍵。\n請檢查並調整設定。"
+				: L"Cannot register wcap keyboard shortcuts.\nSome other application might already use shortcuts.\nPlease check & adjust the settings!",
 			WCAP_TITLE, MB_ICONEXCLAMATION);
 	}
 

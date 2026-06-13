@@ -18,8 +18,12 @@
 #define CONFIG_AUDIO_AAC  0
 #define CONFIG_AUDIO_FLAC 1
 
+#define CONFIG_LANGUAGE_ENGLISH 0
+#define CONFIG_LANGUAGE_ZH_TW   1
+
 typedef struct
 {
+	DWORD Language;
 	// capture
 	BOOL MouseCursor;
 	BOOL OnlyClientArea;
@@ -67,6 +71,7 @@ static void Config_Defaults(Config* C);
 static void Config_Load(Config* C, LPCWSTR FileName);
 static void Config_Save(Config* C, LPCWSTR FileName);
 static BOOL Config_ShowDialog(Config* C);
+static BOOL Config_IsTaiwan(const Config* C);
 
 //
 // implementation
@@ -78,14 +83,22 @@ static BOOL Config_ShowDialog(Config* C);
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <knownfolders.h>
+#include <dwmapi.h>
+#include <uxtheme.h>
 #include <windowsx.h>
 
 #define INI_SECTION L"wcap"
+
+#define CONFIG_COLOR_BACKGROUND RGB(30, 30, 30)
+#define CONFIG_COLOR_CONTROL    RGB(45, 45, 48)
+#define CONFIG_COLOR_TEXT       RGB(245, 245, 245)
+#define CONFIG_COLOR_DISABLED   RGB(145, 145, 145)
 
 // control id's
 #define ID_OK                      IDOK     // 1
 #define ID_CANCEL                  IDCANCEL // 2
 #define ID_DEFAULTS                3
+#define ID_LANGUAGE                10
 
 #define ID_MOUSE_CURSOR              20
 #define ID_ONLY_CLIENT_AREA          30
@@ -143,10 +156,10 @@ static BOOL Config_ShowDialog(Config* C);
 #define COL11W 130
 #define ROW0H 98
 #define ROW1H 124
-#define ROW2H 56
+#define ROW2H 70
 
 #define PADDING 4             // padding for dialog and group boxes
-#define BUTTON_WIDTH 50       // normal button width
+#define BUTTON_WIDTH 64       // normal button width
 #define BUTTON_SMALL_WIDTH 14 // small button width
 #define ITEM_HEIGHT 14        // control item height
 
@@ -167,6 +180,19 @@ static const int gValidVideoProfiles[][4] =
 
 // currently open dialog window
 static HWND gDialogWindow;
+static HBRUSH gConfigBackgroundBrush;
+static HBRUSH gConfigControlBrush;
+
+static BOOL Config_IsTaiwan(const Config* C)
+{
+	return C->Language == CONFIG_LANGUAGE_ZH_TW;
+}
+
+static BOOL Config__DialogIsTaiwan(HWND Window)
+{
+	Config* C = (Config*)GetWindowLongPtrW(Window, GWLP_USERDATA);
+	return C && Config_IsTaiwan(C);
+}
 
 // current control to set shortcut
 struct
@@ -184,9 +210,9 @@ static void Config__UpdateVideoProfiles(HWND Window, DWORD Codec)
 
 	if (Codec == CONFIG_VIDEO_H264)
 	{
-		ComboBox_AddString(Control, L"Base");
-		ComboBox_AddString(Control, L"Main");
-		ComboBox_AddString(Control, L"High");
+		ComboBox_AddString(Control, Config__DialogIsTaiwan(Window) ? L"基本" : L"Base");
+		ComboBox_AddString(Control, Config__DialogIsTaiwan(Window) ? L"主要" : L"Main");
+		ComboBox_AddString(Control, Config__DialogIsTaiwan(Window) ? L"高階" : L"High");
 
 		ComboBox_SetItemData(Control, 0, CONFIG_VIDEO_BASE);
 		ComboBox_SetItemData(Control, 1, CONFIG_VIDEO_MAIN);
@@ -195,8 +221,8 @@ static void Config__UpdateVideoProfiles(HWND Window, DWORD Codec)
 	}
 	else if (Codec == CONFIG_VIDEO_H265)
 	{
-		ComboBox_AddString(Control, L"Main (8-bit)");
-		ComboBox_AddString(Control, L"Main10 (10-bit)");
+		ComboBox_AddString(Control, Config__DialogIsTaiwan(Window) ? L"主要（8 位元）" : L"Main (8-bit)");
+		ComboBox_AddString(Control, Config__DialogIsTaiwan(Window) ? L"主要 10（10 位元）" : L"Main10 (10-bit)");
 
 		ComboBox_SetItemData(Control, 0, CONFIG_VIDEO_MAIN);
 		ComboBox_SetItemData(Control, 1, CONFIG_VIDEO_MAIN_10);
@@ -204,8 +230,8 @@ static void Config__UpdateVideoProfiles(HWND Window, DWORD Codec)
 	}
 	else if (Codec == CONFIG_VIDEO_AV1)
 	{
-		ComboBox_AddString(Control, L"Main (8-bit)");
-		ComboBox_AddString(Control, L"Main (10-bit)");
+		ComboBox_AddString(Control, Config__DialogIsTaiwan(Window) ? L"主要（8 位元）" : L"Main (8-bit)");
+		ComboBox_AddString(Control, Config__DialogIsTaiwan(Window) ? L"主要（10 位元）" : L"Main (10-bit)");
 
 		ComboBox_SetItemData(Control, 0, CONFIG_VIDEO_MAIN);
 		ComboBox_SetItemData(Control, 1, CONFIG_VIDEO_MAIN_10);
@@ -256,16 +282,16 @@ static void Config__UpdateAudioBitrate(HWND Window, DWORD Codec, DWORD AudioBitr
 	}
 	else if (Codec == CONFIG_AUDIO_FLAC)
 	{
-		ComboBox_AddString(Control, L"auto");
+		ComboBox_AddString(Control, Config__DialogIsTaiwan(Window) ? L"自動" : L"auto");
 		ComboBox_SetCurSel(Control, 0);
 	}
 }
 
-static void Config__FormatKey(DWORD KeyMod, WCHAR* Text)
+static void Config__FormatKey(DWORD KeyMod, WCHAR* Text, BOOL Taiwan)
 {
 	if (KeyMod == 0)
 	{
-		StrCpyW(Text, L"[none]");
+		StrCpyW(Text, Taiwan ? L"[未設定]" : L"[none]");
 		return;
 	}
 
@@ -280,29 +306,30 @@ static void Config__FormatKey(DWORD KeyMod, WCHAR* Text)
 	struct
 	{
 		DWORD Key;
-		LPWSTR Text;
+		LPCWSTR English;
+		LPCWSTR Taiwan;
 	}
 	static const Overrides[] =
 	{
-		{ VK_PAUSE,    L"Pause"    },
-		{ VK_SNAPSHOT, L"PrtScr"   },
-		{ VK_PRIOR,    L"PageUp"   },
-		{ VK_NEXT,     L"PageDown" },
-		{ VK_END,      L"End"      },
-		{ VK_HOME,     L"Home"     },
-		{ VK_LEFT,     L"Left"     },
-		{ VK_UP,       L"Up"       },
-		{ VK_RIGHT,    L"Right"    },
-		{ VK_DOWN,     L"Down"     },
-		{ VK_INSERT,   L"Insert"   },
-		{ VK_DELETE,   L"Delete"   },
+		{ VK_PAUSE,    L"Pause",    L"Pause"       },
+		{ VK_SNAPSHOT, L"PrtScr",   L"PrintScreen" },
+		{ VK_PRIOR,    L"PageUp",   L"PageUp"      },
+		{ VK_NEXT,     L"PageDown", L"PageDown"    },
+		{ VK_END,      L"End",      L"End"         },
+		{ VK_HOME,     L"Home",     L"Home"        },
+		{ VK_LEFT,     L"Left",     L"向左鍵"      },
+		{ VK_UP,       L"Up",       L"向上鍵"      },
+		{ VK_RIGHT,    L"Right",    L"向右鍵"      },
+		{ VK_DOWN,     L"Down",     L"向下鍵"      },
+		{ VK_INSERT,   L"Insert",   L"Insert"      },
+		{ VK_DELETE,   L"Delete",   L"Delete"      },
 	};
 
 	for (size_t i = 0; i < ARRAYSIZE(Overrides); i++)
 	{
 		if (Overrides[i].Key == HOT_GET_KEY(KeyMod))
 		{
-			StrCatW(Text, Overrides[i].Text);
+			StrCatW(Text, Taiwan ? Overrides[i].Taiwan : Overrides[i].English);
 			return;
 		}
 	}
@@ -370,15 +397,16 @@ static void Config__SetDialogValues(HWND Window, Config* C)
 	}
 
 	// shortcuts
-	Config__FormatKey(C->ShortcutMonitor, Text);
+	Config__FormatKey(C->ShortcutMonitor, Text, Config_IsTaiwan(C));
 	SetDlgItemTextW(Window, ID_SHORTCUT_MONITOR, Text);
 	SetWindowLongW(GetDlgItem(Window, ID_SHORTCUT_MONITOR), GWLP_USERDATA, C->ShortcutMonitor);
-	Config__FormatKey(C->ShortcutWindow, Text);
+	Config__FormatKey(C->ShortcutWindow, Text, Config_IsTaiwan(C));
 	SetDlgItemTextW(Window, ID_SHORTCUT_WINDOW, Text);
 	SetWindowLongW(GetDlgItem(Window, ID_SHORTCUT_WINDOW), GWLP_USERDATA, C->ShortcutWindow);
-	Config__FormatKey(C->ShortcutRegion, Text);
+	Config__FormatKey(C->ShortcutRegion, Text, Config_IsTaiwan(C));
 	SetDlgItemTextW(Window, ID_SHORTCUT_REGION, Text);
 	SetWindowLongW(GetDlgItem(Window, ID_SHORTCUT_REGION), GWLP_USERDATA, C->ShortcutRegion);
+	SendDlgItemMessageW(Window, ID_LANGUAGE, CB_SETCURSEL, C->Language, 0);
 
 	EnableWindow(GetDlgItem(Window, ID_GPU_ENCODER + 1),  C->HardwareEncoder);
 	EnableWindow(GetDlgItem(Window, ID_LIMIT_LENGTH + 1), C->EnableLimitLength);
@@ -436,7 +464,7 @@ static LRESULT CALLBACK Config__ShortcutProc(HWND Window, UINT Message, WPARAM W
 			}
 
 			WCHAR Text[64];
-			Config__FormatKey(Shortcut, Text);
+			Config__FormatKey(Shortcut, Text, Config_IsTaiwan(gConfigShortcut.Config));
 			SetDlgItemTextW(gDialogWindow, gConfigShortcut.Control, Text);
 			SetWindowLongW(Window, GWLP_USERDATA, Shortcut);
 
@@ -457,6 +485,16 @@ static LRESULT CALLBACK Config__DialogProc(HWND Window, UINT Message, WPARAM WPa
 		Config* C = (Config*)LParam;
 		SetWindowLongPtrW(Window, GWLP_USERDATA, (LONG_PTR)C);
 
+		BOOL DarkMode = TRUE;
+		DwmSetWindowAttribute(Window, 20, &DarkMode, sizeof(DarkMode));
+		gConfigBackgroundBrush = CreateSolidBrush(CONFIG_COLOR_BACKGROUND);
+		gConfigControlBrush = CreateSolidBrush(CONFIG_COLOR_CONTROL);
+
+		for (HWND Control = GetWindow(Window, GW_CHILD); Control; Control = GetWindow(Control, GW_HWNDNEXT))
+		{
+			SetWindowTheme(Control, L"DarkMode_Explorer", NULL);
+		}
+
 		SendDlgItemMessageW(Window, ID_VIDEO_CODEC, CB_ADDSTRING, 0, (LPARAM)L"H264 / AVC");
 		SendDlgItemMessageW(Window, ID_VIDEO_CODEC, CB_ADDSTRING, 0, (LPARAM)L"H265 / HEVC");
 		SendDlgItemMessageW(Window, ID_VIDEO_CODEC, CB_ADDSTRING, 0, (LPARAM)L"AV1");
@@ -470,8 +508,12 @@ static LRESULT CALLBACK Config__DialogProc(HWND Window, UINT Message, WPARAM WPa
 		SendDlgItemMessageW(Window, ID_AUDIO_SAMPLERATE, CB_ADDSTRING, 0, (LPARAM)L"44100");
 		SendDlgItemMessageW(Window, ID_AUDIO_SAMPLERATE, CB_ADDSTRING, 0, (LPARAM)L"48000");
 
-		SendDlgItemMessageW(Window, ID_GPU_ENCODER + 1, CB_ADDSTRING, 0, (LPARAM)L"Prefer iGPU");
-		SendDlgItemMessageW(Window, ID_GPU_ENCODER + 1, CB_ADDSTRING, 0, (LPARAM)L"Prefer dGPU");
+		SendDlgItemMessageW(Window, ID_GPU_ENCODER + 1, CB_ADDSTRING, 0,
+			(LPARAM)(Config_IsTaiwan(C) ? L"優先使用內顯" : L"Prefer iGPU"));
+		SendDlgItemMessageW(Window, ID_GPU_ENCODER + 1, CB_ADDSTRING, 0,
+			(LPARAM)(Config_IsTaiwan(C) ? L"優先使用獨顯" : L"Prefer dGPU"));
+		SendDlgItemMessageW(Window, ID_LANGUAGE, CB_ADDSTRING, 0, (LPARAM)L"English");
+		SendDlgItemMessageW(Window, ID_LANGUAGE, CB_ADDSTRING, 0, (LPARAM)L"繁體中文（台灣）");
 
 		Config__SetDialogValues(Window, C);
 
@@ -482,7 +524,31 @@ static LRESULT CALLBACK Config__DialogProc(HWND Window, UINT Message, WPARAM WPa
 	}
 	else if (Message == WM_DESTROY)
 	{
+		DeleteObject(gConfigBackgroundBrush);
+		DeleteObject(gConfigControlBrush);
+		gConfigBackgroundBrush = NULL;
+		gConfigControlBrush = NULL;
 		gDialogWindow = NULL;
+	}
+	else if (Message == WM_CTLCOLORDLG)
+	{
+		return (LRESULT)gConfigBackgroundBrush;
+	}
+	else if (Message == WM_CTLCOLORSTATIC || Message == WM_CTLCOLORBTN)
+	{
+		HDC Context = (HDC)WParam;
+		HWND Control = (HWND)LParam;
+		SetTextColor(Context, IsWindowEnabled(Control) ? CONFIG_COLOR_TEXT : CONFIG_COLOR_DISABLED);
+		SetBkColor(Context, CONFIG_COLOR_BACKGROUND);
+		SetBkMode(Context, TRANSPARENT);
+		return (LRESULT)gConfigBackgroundBrush;
+	}
+	else if (Message == WM_CTLCOLOREDIT || Message == WM_CTLCOLORLISTBOX)
+	{
+		HDC Context = (HDC)WParam;
+		SetTextColor(Context, CONFIG_COLOR_TEXT);
+		SetBkColor(Context, CONFIG_COLOR_CONTROL);
+		return (LRESULT)gConfigControlBrush;
 	}
 	else if (Message == WM_COMMAND)
 	{
@@ -530,6 +596,7 @@ static LRESULT CALLBACK Config__DialogProc(HWND Window, UINT Message, WPARAM WPa
 			C->ShortcutMonitor = GetWindowLongW(GetDlgItem(Window, ID_SHORTCUT_MONITOR), GWLP_USERDATA);
 			C->ShortcutWindow  = GetWindowLongW(GetDlgItem(Window, ID_SHORTCUT_WINDOW),  GWLP_USERDATA);
 			C->ShortcutRegion  = GetWindowLongW(GetDlgItem(Window, ID_SHORTCUT_REGION),  GWLP_USERDATA);
+			C->Language = (DWORD)SendDlgItemMessageW(Window, ID_LANGUAGE, CB_GETCURSEL, 0, 0);
 
 			EndDialog(Window, TRUE);
 			return TRUE;
@@ -596,6 +663,7 @@ static LRESULT CALLBACK Config__DialogProc(HWND Window, UINT Message, WPARAM WPa
 			}
 
 			HR(IFileDialog_SetOptions(Dialog, FOS_NOCHANGEDIR | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST));
+			HR(IFileDialog_SetTitle(Dialog, Config_IsTaiwan(C) ? L"選擇輸出資料夾" : L"Select Output Folder"));
 			if (SUCCEEDED(IFileDialog_Show(Dialog, Window)) && SUCCEEDED(IFileDialog_GetResult(Dialog, &Folder)))
 			{
 				LPWSTR Path;
@@ -616,7 +684,9 @@ static LRESULT CALLBACK Config__DialogProc(HWND Window, UINT Message, WPARAM WPa
 		{
 			if (gConfigShortcut.Control == 0)
 			{
-				SetDlgItemTextW(Window, Control, L"Press new shortcut, [ESC] to cancel, [BACKSPACE] to disable");
+				SetDlgItemTextW(Window, Control, Config_IsTaiwan(C)
+					? L"請按下新的快捷鍵；Esc 取消，Backspace 停用"
+					: L"Press new shortcut, [ESC] to cancel, [BACKSPACE] to disable");
 
 				gConfigShortcut.Control = Control;
 				gConfigShortcut.Config = C;
@@ -655,6 +725,9 @@ typedef struct {
 	const char* Title;
 	const char* Font;
 	const WORD FontSize;
+	const char* Ok;
+	const char* Cancel;
+	const char* Defaults;
 	const Config__DialogGroup* Groups;
 } Config__DialogLayout;
 
@@ -738,15 +811,15 @@ static void Config__DoDialogLayout(const Config__DialogLayout* Layout, BYTE* Dat
 	int ButtonY = PADDING + ROW0H + ROW1H + ROW2H + PADDING;
 
 	DLGITEMTEMPLATE* OkData = Config__Align(Data, sizeof(DWORD));
-	Data = Config__DoDialogItem(Data, "OK", ID_OK, CONTROL_BUTTON, WS_TABSTOP | BS_DEFPUSHBUTTON, ButtonX, ButtonY, BUTTON_WIDTH, ITEM_HEIGHT);
+	Data = Config__DoDialogItem(Data, Layout->Ok, ID_OK, CONTROL_BUTTON, WS_TABSTOP | BS_DEFPUSHBUTTON, ButtonX, ButtonY, BUTTON_WIDTH, ITEM_HEIGHT);
 	ButtonX += BUTTON_WIDTH + PADDING;
 
 	DLGITEMTEMPLATE* CancelData = Config__Align(Data, sizeof(DWORD));
-	Data = Config__DoDialogItem(Data, "Cancel", ID_CANCEL, CONTROL_BUTTON, WS_TABSTOP | BS_PUSHBUTTON, ButtonX, ButtonY, BUTTON_WIDTH, ITEM_HEIGHT);
+	Data = Config__DoDialogItem(Data, Layout->Cancel, ID_CANCEL, CONTROL_BUTTON, WS_TABSTOP | BS_PUSHBUTTON, ButtonX, ButtonY, BUTTON_WIDTH, ITEM_HEIGHT);
 	ButtonX += BUTTON_WIDTH + PADDING;
 
 	DLGITEMTEMPLATE* DefaultsData = Config__Align(Data, sizeof(DWORD));
-	Data = Config__DoDialogItem(Data, "Defaults", ID_DEFAULTS, CONTROL_BUTTON, WS_TABSTOP | BS_PUSHBUTTON, ButtonX, ButtonY, BUTTON_WIDTH, ITEM_HEIGHT);
+	Data = Config__DoDialogItem(Data, Layout->Defaults, ID_DEFAULTS, CONTROL_BUTTON, WS_TABSTOP | BS_PUSHBUTTON, ButtonX, ButtonY, BUTTON_WIDTH, ITEM_HEIGHT);
 	ButtonX += BUTTON_WIDTH + PADDING;
 
 	for (const Config__DialogGroup* Group = Layout->Groups; Group->Caption; Group++)
@@ -848,6 +921,7 @@ void Config_Defaults(Config* C)
 {
 	*C = (Config)
 	{
+		.Language = CONFIG_LANGUAGE_ENGLISH,
 		// capture
 		.MouseCursor = TRUE,
 		.OnlyClientArea = TRUE,
@@ -956,6 +1030,8 @@ static void Config__ValidateVideoProfile(Config* C)
 
 void Config_Load(Config* C, LPCWSTR FileName)
 {
+	DWORD Language = GetPrivateProfileIntW(INI_SECTION, L"Language", CONFIG_LANGUAGE_ENGLISH, FileName);
+	if (Language <= CONFIG_LANGUAGE_ZH_TW) C->Language = Language;
 	// capture
 	Config__GetBool(FileName, L"MouseCursor",              &C->MouseCursor);
 	Config__GetBool(FileName, L"OnlyClientArea",           &C->OnlyClientArea);
@@ -1007,6 +1083,7 @@ static void Config__WriteInt(LPCWSTR FileName, LPCWSTR Key, DWORD Value)
 
 void Config_Save(Config* C, LPCWSTR FileName)
 {
+	Config__WriteInt(FileName, L"Language", C->Language);
 	// capture
 	WritePrivateProfileStringW(INI_SECTION, L"MouseCursor",              C->MouseCursor              ? L"1" : L"0", FileName);
 	WritePrivateProfileStringW(INI_SECTION, L"OnlyClientArea",           C->OnlyClientArea           ? L"1" : L"0", FileName);
@@ -1053,78 +1130,83 @@ BOOL Config_ShowDialog(Config* C)
 		return FALSE;
 	}
 
+	BOOL Taiwan = Config_IsTaiwan(C);
 	Config__DialogLayout Dialog = (Config__DialogLayout)
 	{
 		.Title = WCAP_CONFIG_TITLE,
-		.Font = "Segoe UI",
+		.Font = Taiwan ? "Microsoft JhengHei UI" : "Segoe UI",
 		.FontSize = 9,
+		.Ok = Taiwan ? "確定" : "OK",
+		.Cancel = Taiwan ? "取消" : "Cancel",
+		.Defaults = Taiwan ? "還原預設值" : "Defaults",
 		.Groups = (Config__DialogGroup[])
 		{
 			{
-				.Caption = "Capture",
+				.Caption = Taiwan ? "擷取" : "Capture",
 				.Rect = { 0, 0, COL00W, ROW0H },
 				.Items = (Config__DialogItem[])
 				{
-					{ "&Mouse Cursor",                ID_MOUSE_CURSOR,              ITEM_CHECKBOX                     },
-					{ "Only &Client Area",            ID_ONLY_CLIENT_AREA,          ITEM_CHECKBOX                     },
-					{ "Show Recording &Border",       ID_SHOW_RECORDING_BORDER,     ITEM_CHECKBOX                     },
-					{ "Keep &Rounded Window Corners", ID_ROUNDED_CORNERS,           ITEM_CHECKBOX                     },
-					{ "Include Secondar&y Windows",   ID_INCLUDE_SECONDARY_WINDOWS, ITEM_CHECKBOX                     },
-					{ "GPU &Encoder",                 ID_GPU_ENCODER,               ITEM_CHECKBOX | ITEM_COMBOBOX, 50 },
+					{ Taiwan ? "滑鼠游標(&M)" : "&Mouse Cursor",                               ID_MOUSE_CURSOR,              ITEM_CHECKBOX                     },
+					{ Taiwan ? "僅擷取用戶端區域(&C)" : "Only &Client Area",                   ID_ONLY_CLIENT_AREA,          ITEM_CHECKBOX                     },
+					{ Taiwan ? "顯示錄影邊框(&B)" : "Show Recording &Border",                  ID_SHOW_RECORDING_BORDER,     ITEM_CHECKBOX                     },
+					{ Taiwan ? "保留視窗圓角(&R)" : "Keep &Rounded Window Corners",            ID_ROUNDED_CORNERS,           ITEM_CHECKBOX                     },
+					{ Taiwan ? "包含次要視窗(&Y)" : "Include Secondar&y Windows",              ID_INCLUDE_SECONDARY_WINDOWS, ITEM_CHECKBOX                     },
+					{ Taiwan ? "GPU 編碼器(&E)" : "GPU &Encoder",                              ID_GPU_ENCODER,               ITEM_CHECKBOX | ITEM_COMBOBOX, 50 },
 					{ NULL },
 				},
 			},
 			{
-				.Caption = "&Output",
+				.Caption = Taiwan ? "輸出(&O)" : "&Output",
 				.Rect = { COL00W + PADDING, 0, COL01W, ROW0H },
 				.Items = (Config__DialogItem[])
 				{
 					{ "",                            ID_OUTPUT_FOLDER,  ITEM_FOLDER                     },
-					{ "O&pen When Finished",         ID_OPEN_FOLDER,    ITEM_CHECKBOX                   },
-					{ "Fragmented MP&4 (H264 only)", ID_FRAGMENTED_MP4, ITEM_CHECKBOX                   },
-					{ "Limit &Length (seconds)",     ID_LIMIT_LENGTH,   ITEM_CHECKBOX | ITEM_NUMBER, 80 },
-					{ "Limit &Size (MB)",            ID_LIMIT_SIZE,     ITEM_CHECKBOX | ITEM_NUMBER, 80 },
+					{ Taiwan ? "完成後開啟資料夾(&P)" : "O&pen When Finished",                   ID_OPEN_FOLDER,    ITEM_CHECKBOX                   },
+					{ Taiwan ? "分段式 MP4（僅限 H264）(&4)" : "Fragmented MP&4 (H264 only)",   ID_FRAGMENTED_MP4, ITEM_CHECKBOX                   },
+					{ Taiwan ? "限制錄影長度（秒）(&L)" : "Limit &Length (seconds)",             ID_LIMIT_LENGTH,   ITEM_CHECKBOX | ITEM_NUMBER, 80 },
+					{ Taiwan ? "限制檔案大小（MB）(&S)" : "Limit &Size (MB)",                    ID_LIMIT_SIZE,     ITEM_CHECKBOX | ITEM_NUMBER, 80 },
 					{ NULL },
 				},
 			},
 			{
-				.Caption = "&Video",
+				.Caption = Taiwan ? "視訊(&V)" : "&Video",
 				.Rect = { 0, ROW0H, COL10W, ROW1H },
 				.Items = (Config__DialogItem[])
 				{
-					{ "&Gamma Correct Resize",      ID_VIDEO_GAMMA_RESIZE ,    ITEM_CHECKBOX     },
-					{ "&Improved Color Conversion", ID_VIDEO_IMPROVED_CONVERT, ITEM_CHECKBOX     },
-					{ "Codec",                      ID_VIDEO_CODEC,            ITEM_COMBOBOX, 64 },
-					{ "Profile",                    ID_VIDEO_PROFILE,          ITEM_COMBOBOX, 64 },
-					{ "Max &Width",                 ID_VIDEO_MAX_WIDTH,        ITEM_NUMBER,   64 },
-					{ "Max &Height",                ID_VIDEO_MAX_HEIGHT,       ITEM_NUMBER,   64 },
-					{ "Max &Framerate",             ID_VIDEO_MAX_FRAMERATE,    ITEM_NUMBER,   64 },
-					{ "Bitrate (kbit/s)",           ID_VIDEO_BITRATE,          ITEM_NUMBER,   64 },
+					{ Taiwan ? "Gamma 校正縮放(&G)" : "&Gamma Correct Resize",                  ID_VIDEO_GAMMA_RESIZE ,    ITEM_CHECKBOX     },
+					{ Taiwan ? "改善色彩轉換(&I)" : "&Improved Color Conversion",               ID_VIDEO_IMPROVED_CONVERT, ITEM_CHECKBOX     },
+					{ Taiwan ? "編碼格式" : "Codec",                                             ID_VIDEO_CODEC,            ITEM_COMBOBOX, 64 },
+					{ Taiwan ? "設定檔" : "Profile",                                              ID_VIDEO_PROFILE,          ITEM_COMBOBOX, 64 },
+					{ Taiwan ? "最大寬度(&W)" : "Max &Width",                                     ID_VIDEO_MAX_WIDTH,        ITEM_NUMBER,   64 },
+					{ Taiwan ? "最大高度(&H)" : "Max &Height",                                    ID_VIDEO_MAX_HEIGHT,       ITEM_NUMBER,   64 },
+					{ Taiwan ? "最大畫面更新率(&F)" : "Max &Framerate",                           ID_VIDEO_MAX_FRAMERATE,    ITEM_NUMBER,   64 },
+					{ Taiwan ? "位元率（kbit/s）" : "Bitrate (kbit/s)",                           ID_VIDEO_BITRATE,          ITEM_NUMBER,   64 },
 					{ NULL },
 				},
 			},
 			{
-				.Caption = "&Audio",
+				.Caption = Taiwan ? "音訊(&A)" : "&Audio",
 				.Rect = { COL10W + PADDING, ROW0H, COL11W, ROW1H },
 				.Items = (Config__DialogItem[])
 				{
-					{ "Capture Au&dio",           ID_AUDIO_CAPTURE,           ITEM_CHECKBOX     },
-					{ "Applicatio&n Local Audio", ID_AUDIO_APPLICATION_LOCAL, ITEM_CHECKBOX     },
-					{ "Codec",                    ID_AUDIO_CODEC,             ITEM_COMBOBOX, 60 },
-					{ "Channels",                 ID_AUDIO_CHANNELS,          ITEM_COMBOBOX, 60 },
-					{ "Samplerate",               ID_AUDIO_SAMPLERATE,        ITEM_COMBOBOX, 60 },
-					{ "Bitrate (kbit/s)",         ID_AUDIO_BITRATE,           ITEM_COMBOBOX, 60 },
+					{ Taiwan ? "擷取音訊(&D)" : "Capture Au&dio",                              ID_AUDIO_CAPTURE,           ITEM_CHECKBOX     },
+					{ Taiwan ? "僅擷取應用程式音訊(&N)" : "Applicatio&n Local Audio",          ID_AUDIO_APPLICATION_LOCAL, ITEM_CHECKBOX     },
+					{ Taiwan ? "編碼格式" : "Codec",                                             ID_AUDIO_CODEC,             ITEM_COMBOBOX, 60 },
+					{ Taiwan ? "聲道" : "Channels",                                              ID_AUDIO_CHANNELS,          ITEM_COMBOBOX, 60 },
+					{ Taiwan ? "取樣率" : "Samplerate",                                          ID_AUDIO_SAMPLERATE,        ITEM_COMBOBOX, 60 },
+					{ Taiwan ? "位元率（kbit/s）" : "Bitrate (kbit/s)",                           ID_AUDIO_BITRATE,           ITEM_COMBOBOX, 60 },
 					{ NULL },
 				},
 			},
 			{
-				.Caption = "Shor&tcuts",
+				.Caption = Taiwan ? "快捷鍵與語言(&T)" : "Shor&tcuts & Language",
 				.Rect = { 0, ROW0H + ROW1H, COL00W + PADDING + COL01W, ROW2H },
 				.Items = (Config__DialogItem[])
 				{
-					{ "Capture Monitor", ID_SHORTCUT_MONITOR, ITEM_HOTKEY, 64 },
-					{ "Capture Window",  ID_SHORTCUT_WINDOW,  ITEM_HOTKEY, 64 },
-					{ "Capture Region",  ID_SHORTCUT_REGION,  ITEM_HOTKEY, 64 },
+					{ Taiwan ? "擷取螢幕" : "Capture Monitor", ID_SHORTCUT_MONITOR, ITEM_HOTKEY, 64 },
+					{ Taiwan ? "擷取視窗" : "Capture Window",  ID_SHORTCUT_WINDOW,  ITEM_HOTKEY, 64 },
+					{ Taiwan ? "擷取區域" : "Capture Region",  ID_SHORTCUT_REGION,  ITEM_HOTKEY, 64 },
+					{ Taiwan ? "介面語言" : "Interface Language", ID_LANGUAGE, ITEM_COMBOBOX, 64 },
 					{ NULL },
 				},
 			},
