@@ -1,6 +1,20 @@
 wcap
 ====
 
+原始 [wcap][] 的繁體中文與深色介面改版。
+
+本專案是 [mmozeiko/wcap][wcap] 的小幅介面改版，主要變更如下：
+
+* 為設定視窗與系統匣選單加入完整的深色主題。
+* 新增繁體中文（台灣）介面，並保留英文介面。
+
+除了上述介面調整之外，錄影功能、編碼能力、快捷鍵、設定項目與操作方式皆與原始專案相同。
+
+This project is a lightly modified edition of [mmozeiko/wcap][wcap]. It adds a complete dark theme
+and a Traditional Chinese (Taiwan) interface while retaining the English interface. All recording
+features, encoding capabilities, shortcuts, settings, and behavior remain the same as the original
+project.
+
 Simple and efficient screen recording utility for Windows.
 
 Get latest binary here: [wcap-x64.exe][] or [wcap-arm64.exe][]
@@ -109,6 +123,7 @@ a compiled binary, for any purpose, commercial or non-commercial, and by any mea
 
 [wcap-x64.exe]: https://raw.githubusercontent.com/wiki/mmozeiko/wcap/wcap-x64.exe
 [wcap-arm64.exe]: https://raw.githubusercontent.com/wiki/mmozeiko/wcap/wcap-arm64.exe
+[wcap]: https://github.com/mmozeiko/wcap
 [wgc]: https://blogs.windows.com/windowsdeveloper/2019/09/16/new-ways-to-do-screen-capture/
 [MSMFH264]: https://docs.microsoft.com/en-us/windows/win32/medfound/h-264-video-encoder
 [VS]: https://visualstudio.microsoft.com/vs/
