@@ -17,7 +17,7 @@ project.
 
 Simple and efficient screen recording utility for Windows.
 
-Get the latest release here: [wcap-x64.exe][] or [wcap-arm64.exe][].
+Get latest binary here: [wcap-x64.exe][] or [wcap-arm64.exe][]
 
 **WARNING**: Windows Defender or other AV software might report false positive detection
 
@@ -121,8 +121,8 @@ This is free and unencumbered software released into the public domain.
 Anyone is free to copy, modify, publish, use, compile, sell, or distribute this software, either in source code form or as
 a compiled binary, for any purpose, commercial or non-commercial, and by any means.
 
-[wcap-x64.exe]: https://github.com/nperovic/wcap/releases/latest/download/wcap-x64.exe
-[wcap-arm64.exe]: https://github.com/nperovic/wcap/releases/latest/download/wcap-arm64.exe
+[wcap-x64.exe]: https://raw.githubusercontent.com/wiki/mmozeiko/wcap/wcap-x64.exe
+[wcap-arm64.exe]: https://raw.githubusercontent.com/wiki/mmozeiko/wcap/wcap-arm64.exe
 [wcap]: https://github.com/mmozeiko/wcap
 [wgc]: https://blogs.windows.com/windowsdeveloper/2019/09/16/new-ways-to-do-screen-capture/
 [MSMFH264]: https://docs.microsoft.com/en-us/windows/win32/medfound/h-264-video-encoder
