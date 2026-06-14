@@ -42,8 +42,13 @@ if "%ARGS:debug=%" neq "%ARGS%" (
 if "%TARGET_ARCH%" equ "arm64" set CL=%CL% /arch:armv8.1
 if "%TARGET_ARCH%" equ "x64" set LINK=%LINK% /FIXED /merge:_RDATA=.rdata
 
+tasklist /FI "IMAGENAME eq wcap-tw-%TARGET_ARCH%.exe" /NH 2>nul | find /I "wcap-tw-%TARGET_ARCH%.exe" >nul && (
+  echo ERROR: wcap-tw-%TARGET_ARCH%.exe is running. Exit the application before building.
+  exit /b 1
+)
+
 tasklist /FI "IMAGENAME eq wcap-%TARGET_ARCH%.exe" /NH 2>nul | find /I "wcap-%TARGET_ARCH%.exe" >nul && (
-  echo ERROR: wcap-%TARGET_ARCH%.exe is running. Exit the application before building.
+  echo ERROR: Legacy wcap-%TARGET_ARCH%.exe is running. Exit the application before building.
   exit /b 1
 )
 
@@ -58,7 +63,7 @@ call :fxc ConvertPass2           || exit /b 1
 for /f %%i in ('call git describe --always --dirty') do set CL=%CL% -DWCAP_GIT_INFO=\"%%i\"
 
 rc.exe /nologo wcap.rc || exit /b 1
-cl.exe /nologo /utf-8 /std:c11 /experimental:c11atomics /W3 /WX wcap.c wcap.res /Fewcap-%TARGET_ARCH%.exe /link /INCREMENTAL:NO /MANIFEST:EMBED /MANIFESTINPUT:wcap.manifest /SUBSYSTEM:WINDOWS || exit /b 1
+cl.exe /nologo /utf-8 /std:c11 /experimental:c11atomics /W3 /WX wcap.c wcap.res /Fewcap-tw-%TARGET_ARCH%.exe /link /INCREMENTAL:NO /MANIFEST:EMBED /MANIFESTINPUT:wcap.manifest /SUBSYSTEM:WINDOWS || exit /b 1
 del *.obj *.res >nul
 
 goto :eof

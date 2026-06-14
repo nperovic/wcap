@@ -1,6 +1,15 @@
 Changelog
 =========
 
+##### 2026.06.14
+ * rename the project and binaries to wcap-tw
+ * add tray menu commands to start monitor, window, and region recording
+ * add a tray menu command to stop the current recording
+ * add an interactive window picker for tray-initiated window recording
+ * center the interface language selector text
+ * widen the settings dialog and match the language selector colors
+ * migrate legacy wcap configuration automatically
+
 ##### 2025.11.23
  * option to capture secondary windows (popups & dialogs) on Windows 11 24H2 and up
 

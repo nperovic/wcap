@@ -53,9 +53,13 @@ __declspec(dllexport) DWORD NvOptimusEnablement = 1;
 #define WCAP_VIDEO_UPDATE_TIMER     2
 #define WCAP_VIDEO_UPDATE_INTERVAL  100 // msec
 
-#define CMD_WCAP     1
-#define CMD_QUIT     2
-#define CMD_SETTINGS 3
+#define CMD_WCAP           1
+#define CMD_QUIT           2
+#define CMD_SETTINGS       3
+#define CMD_RECORD_MONITOR 4
+#define CMD_RECORD_WINDOW  5
+#define CMD_RECORD_REGION  6
+#define CMD_STOP           7
 
 #define HOT_RECORD_WINDOW  1
 #define HOT_RECORD_MONITOR 2
@@ -114,6 +118,11 @@ static POINT gRectMousePos;
 static int gRectResize;
 static int gRectSetSize[2];
 static BOOL gRectSetSizeClick;
+static BOOL gSelectingWindow;
+static HWND gSelectedWindow;
+static HWND gWindowSelectionClick;
+static RECT gSelectedWindowRect;
+static POINT gSelectionOrigin;
 
 // globals
 static HWND gWindow;
@@ -417,9 +426,8 @@ static ID3D11Device* CreateDevice(void)
 	return Device;
 }
 
-static void CaptureWindow(void)
+static void CaptureWindow(HWND Window)
 {
-	HWND Window = GetForegroundWindow();
 	if (Window == NULL)
 	{
 		ShowNotification(Config_IsTaiwan(&gConfig) ? L"尚未選取視窗。" : L"No window is selected!",
@@ -469,6 +477,123 @@ static void CaptureWindow(void)
 	}
 
 	StartRecording(Device, Window);
+}
+
+typedef struct WindowAtPoint
+{
+	POINT Point;
+	HWND Window;
+	RECT Rect;
+}
+WindowAtPoint;
+
+static BOOL CALLBACK FindWindowAtPoint(HWND Window, LPARAM Parameter)
+{
+	WindowAtPoint* Selection = (WindowAtPoint*)Parameter;
+	if (Window == gWindow || !IsWindowVisible(Window) || IsIconic(Window))
+	{
+		return TRUE;
+	}
+
+	DWORD Cloaked = 0;
+	if (SUCCEEDED(DwmGetWindowAttribute(Window, DWMWA_CLOAKED, &Cloaked, sizeof(Cloaked))) && Cloaked)
+	{
+		return TRUE;
+	}
+
+	RECT Rect;
+	if (FAILED(DwmGetWindowAttribute(Window, DWMWA_EXTENDED_FRAME_BOUNDS, &Rect, sizeof(Rect))))
+	{
+		GetWindowRect(Window, &Rect);
+	}
+
+	if (PtInRect(&Rect, Selection->Point))
+	{
+		Selection->Window = Window;
+		Selection->Rect = Rect;
+		return FALSE;
+	}
+	return TRUE;
+}
+
+static void UpdateWindowSelection(void)
+{
+	POINT Mouse;
+	GetCursorPos(&Mouse);
+
+	WindowAtPoint Selection = { .Point = Mouse };
+	EnumWindows(&FindWindowAtPoint, (LPARAM)&Selection);
+	if (Selection.Window)
+	{
+		OffsetRect(&Selection.Rect, -gSelectionOrigin.x, -gSelectionOrigin.y);
+	}
+
+	if (Selection.Window != gSelectedWindow ||
+		!EqualRect(&Selection.Rect, &gSelectedWindowRect))
+	{
+		gSelectedWindow = Selection.Window;
+		if (Selection.Window)
+		{
+			gSelectedWindowRect = Selection.Rect;
+		}
+		else
+		{
+			SetRectEmpty(&gSelectedWindowRect);
+		}
+		InvalidateRect(gWindow, NULL, FALSE);
+	}
+}
+
+static void CaptureWindowSelectionInit(void)
+{
+	int X = GetSystemMetrics(SM_XVIRTUALSCREEN);
+	int Y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+	DWORD Width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+	DWORD Height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+	HDC DeviceContext = GetDC(NULL);
+	if (DeviceContext == NULL)
+	{
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"無法取得螢幕的 HDC。" : L"Error getting desktop HDC!",
+			Config_IsTaiwan(&gConfig) ? L"無法選取視窗" : L"Cannot Select Window", NIIF_WARNING);
+		return;
+	}
+
+	HDC MemoryContext = CreateCompatibleDC(DeviceContext);
+	HBITMAP MemoryBitmap = CreateCompatibleBitmap(DeviceContext, Width, Height);
+	Assert(MemoryContext && MemoryBitmap);
+	SelectObject(MemoryContext, MemoryBitmap);
+	BitBlt(MemoryContext, 0, 0, Width, Height, DeviceContext, X, Y, SRCCOPY);
+
+	HDC MemoryDarkContext = CreateCompatibleDC(DeviceContext);
+	HBITMAP MemoryDarkBitmap = CreateCompatibleBitmap(DeviceContext, Width, Height);
+	Assert(MemoryDarkContext && MemoryDarkBitmap);
+	SelectObject(MemoryDarkContext, MemoryDarkBitmap);
+
+	BLENDFUNCTION Blend =
+	{
+		.BlendOp = AC_SRC_OVER,
+		.SourceConstantAlpha = 0x40,
+	};
+	AlphaBlend(MemoryDarkContext, 0, 0, Width, Height, MemoryContext, 0, 0, Width, Height, Blend);
+	ReleaseDC(NULL, DeviceContext);
+
+	gRectContext = MemoryContext;
+	gRectDarkContext = MemoryDarkContext;
+	gRectBitmap = MemoryBitmap;
+	gRectDarkBitmap = MemoryDarkBitmap;
+	gRectWidth = Width;
+	gRectHeight = Height;
+	gSelectingWindow = TRUE;
+	gSelectedWindow = NULL;
+	gWindowSelectionClick = NULL;
+	SetRectEmpty(&gSelectedWindowRect);
+	gSelectionOrigin = (POINT){ X, Y };
+
+	SetCursor(gCursorClick);
+	SetWindowPos(gWindow, HWND_TOPMOST, X, Y, Width, Height, SWP_SHOWWINDOW);
+	SetForegroundWindow(gWindow);
+	UpdateWindowSelection();
 }
 
 static void CaptureMonitor(void)
@@ -581,6 +706,10 @@ static void CaptureRegionRelease(void)
 {
 	SetWindowPos(gWindow, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_HIDEWINDOW | SWP_NOMOVE | SWP_NOSIZE);
 	SetWindowLongW(gWindow, GWL_EXSTYLE, 0);
+	gSelectingWindow = FALSE;
+	gSelectedWindow = NULL;
+	gWindowSelectionClick = NULL;
+	SetRectEmpty(&gSelectedWindowRect);
 
 	if (gRectContext)
 	{
@@ -783,7 +912,15 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 			}
 			else if (WParam == VK_RETURN)
 			{
-				if (gRectSelected)
+				if (gSelectingWindow && gSelectedWindow)
+				{
+					HWND SelectedWindow = gSelectedWindow;
+					CaptureRegionDone();
+					gRecordingStarted = TRUE;
+					CaptureWindow(SelectedWindow);
+					gRecordingStarted = FALSE;
+				}
+				else if (gRectSelected)
 				{
 					CaptureRegion();
 				}
@@ -795,7 +932,12 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 	{
 		if (gRectContext)
 		{
-			if (gRectSetSize[0])
+			if (gSelectingWindow)
+			{
+				gWindowSelectionClick = gSelectedWindow;
+				SetCapture(Window);
+			}
+			else if (gRectSetSize[0])
 			{
 				gRectSetSizeClick = TRUE;
 				gRectSelection[1].x = gRectSelection[0].x + gRectSetSize[0];
@@ -833,7 +975,20 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 	{
 		if (gRectContext)
 		{
-			if (gRectSetSizeClick)
+			if (gSelectingWindow)
+			{
+				HWND SelectedWindow = gWindowSelectionClick;
+				gWindowSelectionClick = NULL;
+				ReleaseCapture();
+				if (SelectedWindow)
+				{
+					CaptureRegionDone();
+					gRecordingStarted = TRUE;
+					CaptureWindow(SelectedWindow);
+					gRecordingStarted = FALSE;
+				}
+			}
+			else if (gRectSetSizeClick)
 			{
 				gRectSetSizeClick = FALSE;
 			}
@@ -858,6 +1013,13 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 	{
 		if (gRectContext)
 		{
+			if (gSelectingWindow)
+			{
+				SetCursor(gCursorClick);
+				UpdateWindowSelection();
+				return 0;
+			}
+
 			int X = GET_X_LPARAM(LParam);
 			int Y = GET_Y_LPARAM(LParam);
 
@@ -1003,6 +1165,21 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 
 			AppendMenuW(Menu, MF_STRING, CMD_WCAP, WCAP_TITLE);
 			AppendMenuW(Menu, MF_SEPARATOR, 0, NULL);
+			if (gRecording)
+			{
+				AppendMenuW(Menu, MF_STRING, CMD_STOP,
+					Config_IsTaiwan(&gConfig) ? L"停止錄影" : L"Stop Recording");
+			}
+			else
+			{
+				AppendMenuW(Menu, MF_STRING, CMD_RECORD_MONITOR,
+					Config_IsTaiwan(&gConfig) ? L"開始錄製螢幕" : L"Start Monitor Recording");
+				AppendMenuW(Menu, MF_STRING, CMD_RECORD_WINDOW,
+					Config_IsTaiwan(&gConfig) ? L"開始錄製視窗" : L"Start Window Recording");
+				AppendMenuW(Menu, MF_STRING, CMD_RECORD_REGION,
+					Config_IsTaiwan(&gConfig) ? L"開始錄製區域" : L"Start Region Recording");
+			}
+			AppendMenuW(Menu, MF_SEPARATOR, 0, NULL);
 			AppendMenuW(Menu, MF_STRING | (gRecording ? MF_DISABLED : 0), CMD_SETTINGS,
 				Config_IsTaiwan(&gConfig) ? L"設定" : L"Settings");
 			AppendMenuW(Menu, MF_STRING, CMD_QUIT, Config_IsTaiwan(&gConfig) ? L"結束" : L"Exit");
@@ -1016,6 +1193,26 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 			if (Command == CMD_WCAP)
 			{
 				ShellExecuteW(NULL, L"open", WCAP_URL, NULL, NULL, SW_SHOWNORMAL);
+			}
+			else if (Command == CMD_RECORD_MONITOR)
+			{
+				gRecordingStarted = TRUE;
+				CaptureMonitor();
+				gRecordingStarted = FALSE;
+			}
+			else if (Command == CMD_RECORD_WINDOW)
+			{
+				CaptureWindowSelectionInit();
+			}
+			else if (Command == CMD_RECORD_REGION)
+			{
+				gRecordingStarted = TRUE;
+				CaptureRegionInit();
+				gRecordingStarted = FALSE;
+			}
+			else if (Command == CMD_STOP)
+			{
+				StopRecording();
 			}
 			else if (Command == CMD_QUIT)
 			{
@@ -1065,7 +1262,7 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 				if (WParam == HOT_RECORD_WINDOW)
 				{
 					gRecordingStarted = TRUE;
-					CaptureWindow();
+					CaptureWindow(GetForegroundWindow());
 					gRecordingStarted = FALSE;
 				}
 				else if (WParam == HOT_RECORD_MONITOR)
@@ -1100,8 +1297,8 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 
 			WCHAR Text[1024];
 			StrFormat(Text, Config_IsTaiwan(&gConfig)
-				? L"錄影中：%dx%d @ %.2f\n長度：%ls\n位元率：%u kbit/s\n大小：%ls\n漏畫格：%u"
-				: L"Recording: %dx%d @ %.2f\nLength: %ls\nBitrate: %u kbit/s\nSize: %ls\nFramedrop: %u",
+				? L"錄影中：%dx%d @ %.2f\n長度：%ls\n位元率：%u kbit/s\n大小：%ls\n捨棄影格數：%u"
+				: L"Recording: %dx%d @ %.2f\nLength: %ls\nBitrate: %u kbit/s\nSize: %ls\nDropped Frames: %u",
 				gEncoder.OutputWidth, gEncoder.OutputHeight,
 				(float)gEncoder.FramerateNum / (float)gEncoder.FramerateDen,
 				LengthText,
@@ -1123,7 +1320,7 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 	}
 	else if (Message == WM_WCAP_ALREADY_RUNNING)
 	{
-		ShowNotification(Config_IsTaiwan(&gConfig) ? L"wcap 已在執行中。" : L"wcap is already running!", NULL, NIIF_INFO);
+		ShowNotification(Config_IsTaiwan(&gConfig) ? L"wcap-tw 已在執行中。" : L"wcap-tw is already running!", NULL, NIIF_INFO);
 		return 0;
 	}
 	else if (Message == WM_TASKBARCREATED)
@@ -1157,7 +1354,32 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 					BitBlt(Context, X, Y, W, H, gRectDarkContext, X, Y, SRCCOPY);
 				}
 
-				if (gRectSelected)
+				if (gSelectingWindow)
+				{
+					if (gSelectedWindow)
+					{
+						RECT Rect = gSelectedWindowRect;
+						IntersectRect(&Rect, &Rect, &(RECT){ 0, 0, (LONG)gRectWidth, (LONG)gRectHeight });
+						BitBlt(Context, Rect.left, Rect.top, Rect.right - Rect.left, Rect.bottom - Rect.top,
+							gRectContext, Rect.left, Rect.top, SRCCOPY);
+
+						RECT Border = Rect;
+						InflateRect(&Border, 2, 2);
+						HBRUSH BorderBrush = CreateSolidBrush(RGB(255, 255, 0));
+						FrameRect(Context, &Border, BorderBrush);
+						DeleteObject(BorderBrush);
+					}
+
+					SelectObject(Context, gFontBold);
+					SetTextAlign(Context, TA_TOP | TA_CENTER);
+					SetTextColor(Context, RGB(255, 255, 0));
+					SetBkMode(Context, TRANSPARENT);
+					LPCWSTR Text = Config_IsTaiwan(&gConfig)
+						? L"在要錄製的視窗上按一下左鍵；按 Esc 取消。"
+						: L"Left-click the window to record; press Esc to cancel.";
+					ExtTextOutW(Context, gRectWidth / 2, 24, 0, NULL, Text, lstrlenW(Text), NULL);
+				}
+				else if (gRectSelected)
 				{
 					// draw selected rectangle
 					int X0 = min(gRectSelection[0].x, gRectSelection[1].x);
@@ -1402,7 +1624,7 @@ void WinMainCRTStartup()
 		.cbSize = sizeof(WindowClass),
 		.lpfnWndProc = WindowProc,
 		.hInstance = GetModuleHandleW(NULL),
-		.lpszClassName = L"wcap_window_class",
+		.lpszClassName = L"wcap_tw_window_class",
 	};
 
 	HWND Existing = FindWindowW(WindowClass.lpszClassName, NULL);
@@ -1426,7 +1648,25 @@ void WinMainCRTStartup()
 	HR(CoInitializeEx(0, COINIT_APARTMENTTHREADED));
 
 	Config_Defaults(&gConfig);
-	Config_Load(&gConfig, gConfigPath);
+	if (!PathFileExistsW(gConfigPath))
+	{
+		WCHAR LegacyConfigPath[MAX_PATH];
+		StrCpyW(LegacyConfigPath, gConfigPath);
+		StrCpyW(PathFindFileNameW(LegacyConfigPath), WCAP_LEGACY_CONFIG_FILENAME);
+		if (PathFileExistsW(LegacyConfigPath))
+		{
+			Config_Load(&gConfig, LegacyConfigPath);
+			Config_Save(&gConfig, gConfigPath);
+		}
+		else
+		{
+			Config_Load(&gConfig, gConfigPath);
+		}
+	}
+	else
+	{
+		Config_Load(&gConfig, gConfigPath);
+	}
 	ScreenCapture_Create(&gCapture, &OnCaptureFrame, false);
 	Encoder_Init(&gEncoder);
 
@@ -1473,8 +1713,8 @@ void WinMainCRTStartup()
 	{
 		MessageBoxW(NULL,
 			Config_IsTaiwan(&gConfig)
-				? L"無法註冊 wcap 快捷鍵。\n其他應用程式可能已使用相同的快捷鍵。\n請檢查並調整設定。"
-				: L"Cannot register wcap keyboard shortcuts.\nSome other application might already use shortcuts.\nPlease check & adjust the settings!",
+				? L"無法註冊 wcap-tw 快捷鍵。\n其他應用程式可能已使用相同的快捷鍵。\n請檢查並調整設定。"
+				: L"Cannot register wcap-tw keyboard shortcuts.\nSome other application might already use shortcuts.\nPlease check & adjust the settings!",
 			WCAP_TITLE, MB_ICONEXCLAMATION);
 	}
 

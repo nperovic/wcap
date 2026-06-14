@@ -1,4 +1,4 @@
-name: wcap
+name: wcap-tw
 
 on:
   push:
@@ -39,8 +39,8 @@ jobs:
         if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
         shell: cmd
         run: |
-          copy repo\wcap-x64.exe   wiki
-          copy repo\wcap-arm64.exe wiki
+          copy repo\wcap-tw-x64.exe   wiki
+          copy repo\wcap-tw-arm64.exe wiki
 
           cd wiki
           git config --local user.email "action@github.com"

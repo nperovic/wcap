@@ -91,6 +91,7 @@ static BOOL Config_IsTaiwan(const Config* C);
 
 #define CONFIG_COLOR_BACKGROUND RGB(24, 25, 28)
 #define CONFIG_COLOR_CONTROL    RGB(38, 40, 45)
+#define CONFIG_COLOR_COMBO      RGB(51, 52, 54)
 #define CONFIG_COLOR_TEXT       RGB(232, 234, 237)
 #define CONFIG_COLOR_DISABLED   RGB(126, 130, 138)
 
@@ -140,6 +141,7 @@ static BOOL Config_IsTaiwan(const Config* C);
 #define ITEM_FOLDER   (1<<3)
 #define ITEM_BUTTON   (1<<4)
 #define ITEM_HOTKEY   (1<<5)
+#define ITEM_COMBOBOX_CENTER (1<<6)
 
 // win32 control styles
 #define CONTROL_BUTTON    0x0080
@@ -150,10 +152,10 @@ static BOOL Config_IsTaiwan(const Config* C);
 #define CONTROL_COMBOBOX  0x0085
 
 // group box width/height
-#define COL00W 120
-#define COL01W 154
-#define COL10W 144
-#define COL11W 130
+#define COL00W 130
+#define COL01W 164
+#define COL10W 154
+#define COL11W 140
 #define ROW0H 98
 #define ROW1H 124
 #define ROW2H 70
@@ -630,6 +632,45 @@ static LRESULT CALLBACK Config__DialogProc(HWND Window, UINT Message, WPARAM WPa
 		SetBkColor(Context, CONFIG_COLOR_CONTROL);
 		return (LRESULT)gConfigControlBrush;
 	}
+	else if (Message == WM_MEASUREITEM)
+	{
+		MEASUREITEMSTRUCT* Measure = (MEASUREITEMSTRUCT*)LParam;
+		if (Measure->CtlID == ID_LANGUAGE)
+		{
+			Measure->itemHeight = 20;
+			return TRUE;
+		}
+	}
+	else if (Message == WM_DRAWITEM)
+	{
+		DRAWITEMSTRUCT* Draw = (DRAWITEMSTRUCT*)LParam;
+		if (Draw->CtlID == ID_LANGUAGE)
+		{
+			COLORREF Background = Draw->itemState & ODS_SELECTED ? RGB(62, 68, 80) : CONFIG_COLOR_COMBO;
+			HBRUSH Brush = CreateSolidBrush(Background);
+			FillRect(Draw->hDC, &Draw->rcItem, Brush);
+			DeleteObject(Brush);
+
+			if (Draw->itemID != (UINT)-1)
+			{
+				WCHAR Text[64];
+				SendMessageW(Draw->hwndItem, CB_GETLBTEXT, Draw->itemID, (LPARAM)Text);
+
+				SetTextColor(Draw->hDC,
+					Draw->itemState & ODS_DISABLED ? CONFIG_COLOR_DISABLED : CONFIG_COLOR_TEXT);
+				SetBkMode(Draw->hDC, TRANSPARENT);
+
+				RECT TextRect = Draw->rcItem;
+				DrawTextW(Draw->hDC, Text, -1, &TextRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+			}
+
+			if (Draw->itemState & ODS_FOCUS)
+			{
+				DrawFocusRect(Draw->hDC, &Draw->rcItem);
+			}
+			return TRUE;
+		}
+	}
 	else if (Message == WM_COMMAND)
 	{
 		Config* C = (Config*)GetWindowLongPtrW(Window, GWLP_USERDATA);
@@ -968,7 +1009,12 @@ static void Config__DoDialogLayout(const Config__DialogLayout* Layout, BYTE* Dat
 
 			if (HasCombobox)
 			{
-				Data = Config__DoDialogItem(Data, "", ItemId, CONTROL_COMBOBOX, WS_TABSTOP | CBS_DROPDOWNLIST | CBS_HASSTRINGS, ItemX, Y, ItemW, ITEM_HEIGHT);
+				DWORD Style = WS_TABSTOP | CBS_DROPDOWNLIST | CBS_HASSTRINGS;
+				if (Item->Item & ITEM_COMBOBOX_CENTER)
+				{
+					Style |= CBS_OWNERDRAWFIXED;
+				}
+				Data = Config__DoDialogItem(Data, "", ItemId, CONTROL_COMBOBOX, Style, ItemX, Y, ItemW, ITEM_HEIGHT);
 				ItemCount++;
 			}
 
@@ -1231,7 +1277,7 @@ BOOL Config_ShowDialog(Config* C)
 					{ Taiwan ? "顯示錄影邊框(&B)" : "Show Recording &Border",                  ID_SHOW_RECORDING_BORDER,     ITEM_CHECKBOX                     },
 					{ Taiwan ? "保留視窗圓角(&R)" : "Keep &Rounded Window Corners",            ID_ROUNDED_CORNERS,           ITEM_CHECKBOX                     },
 					{ Taiwan ? "包含次要視窗(&Y)" : "Include Secondar&y Windows",              ID_INCLUDE_SECONDARY_WINDOWS, ITEM_CHECKBOX                     },
-					{ Taiwan ? "GPU 編碼器(&E)" : "GPU &Encoder",                              ID_GPU_ENCODER,               ITEM_CHECKBOX | ITEM_COMBOBOX, 50 },
+					{ Taiwan ? "GPU 編碼器(&E)" : "GPU &Encoder",                              ID_GPU_ENCODER,               ITEM_CHECKBOX | ITEM_COMBOBOX, 58 },
 					{ NULL },
 				},
 			},
@@ -1243,8 +1289,8 @@ BOOL Config_ShowDialog(Config* C)
 					{ "",                            ID_OUTPUT_FOLDER,  ITEM_FOLDER                     },
 					{ Taiwan ? "完成後開啟資料夾(&P)" : "O&pen When Finished",                   ID_OPEN_FOLDER,    ITEM_CHECKBOX                   },
 					{ Taiwan ? "分段式 MP4（僅限 H264）(&4)" : "Fragmented MP&4 (H264 only)",   ID_FRAGMENTED_MP4, ITEM_CHECKBOX                   },
-					{ Taiwan ? "限制錄影長度（秒）(&L)" : "Limit &Length (seconds)",             ID_LIMIT_LENGTH,   ITEM_CHECKBOX | ITEM_NUMBER, 80 },
-					{ Taiwan ? "限制檔案大小（MB）(&S)" : "Limit &Size (MB)",                    ID_LIMIT_SIZE,     ITEM_CHECKBOX | ITEM_NUMBER, 80 },
+					{ Taiwan ? "限制錄影長度（秒）(&L)" : "Limit &Length (seconds)",             ID_LIMIT_LENGTH,   ITEM_CHECKBOX | ITEM_NUMBER, 94 },
+					{ Taiwan ? "限制檔案大小（MB）(&S)" : "Limit &Size (MB)",                    ID_LIMIT_SIZE,     ITEM_CHECKBOX | ITEM_NUMBER, 94 },
 					{ NULL },
 				},
 			},
@@ -1286,7 +1332,7 @@ BOOL Config_ShowDialog(Config* C)
 					{ Taiwan ? "擷取螢幕" : "Capture Monitor", ID_SHORTCUT_MONITOR, ITEM_HOTKEY, 64 },
 					{ Taiwan ? "擷取視窗" : "Capture Window",  ID_SHORTCUT_WINDOW,  ITEM_HOTKEY, 64 },
 					{ Taiwan ? "擷取區域" : "Capture Region",  ID_SHORTCUT_REGION,  ITEM_HOTKEY, 64 },
-					{ Taiwan ? "介面語言" : "Interface Language", ID_LANGUAGE, ITEM_COMBOBOX, 64 },
+					{ Taiwan ? "介面語言" : "Interface Language", ID_LANGUAGE, ITEM_COMBOBOX | ITEM_COMBOBOX_CENTER, 64 },
 					{ NULL },
 				},
 			},

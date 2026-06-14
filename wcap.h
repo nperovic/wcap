@@ -14,13 +14,19 @@
 #include <intrin.h>
 #include <stdatomic.h>
 
-#define WCAP_TITLE L"wcap"
-#define WCAP_URL   L"https://github.com/mmozeiko/wcap"
+#define WCAP_TITLE L"wcap-tw"
+#define WCAP_URL   L"https://github.com/nperovic/wcap-tw"
 
 #if defined(WCAP_GIT_INFO)
-#	define WCAP_CONFIG_TITLE "wcap, " __DATE__ " [" WCAP_GIT_INFO "]"
+#	define WCAP_CONFIG_TITLE "wcap-tw, " __DATE__ " [" WCAP_GIT_INFO "]"
 #else
-#	define WCAP_CONFIG_TITLE "wcap, " __DATE__
+#	define WCAP_CONFIG_TITLE "wcap-tw, " __DATE__
+#endif
+
+#if defined(_M_AMD64)
+#	define WCAP_LEGACY_CONFIG_FILENAME L"wcap-x64.ini"
+#elif defined(_M_ARM64)
+#	define WCAP_LEGACY_CONFIG_FILENAME L"wcap-arm64.ini"
 #endif
 
 #ifdef _DEBUG

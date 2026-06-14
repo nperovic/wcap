@@ -63,13 +63,13 @@ cd D:\Project\wcap
 cmd /c build.cmd x64
 ```
 
-執行建置前，必須先從系統匣結束既有的 `wcap-x64.exe`。Windows 無法覆寫正在執行的
-程式；若目標程式仍在執行，`build.cmd` 會在編譯前顯示錯誤並停止。
+執行建置前，必須先從系統列結束既有的 `wcap-tw-x64.exe` 與舊版 `wcap-x64.exe`。
+Windows 無法覆寫正在執行的程式；若任一程式仍在執行，`build.cmd` 會在編譯前顯示錯誤並停止。
 
 成功後會在專案根目錄產生：
 
 ```text
-wcap-x64.exe
+wcap-tw-x64.exe
 ```
 
 建置過程產生的 `shaders` 目錄及中間檔案不納入版本控制。
@@ -108,7 +108,7 @@ cmd /c build.cmd x64
 建置成功必須同時符合：
 
 1. 指令結束碼為 `0`。
-2. `wcap-x64.exe` 已產生。
+2. `wcap-tw-x64.exe` 已產生。
 3. 編譯輸出沒有警告或錯誤；專案使用 `/WX`，警告會直接視為錯誤。
 4. `git status --short` 只顯示預期的原始碼或文件變更。
 
@@ -122,10 +122,10 @@ cmd /c build.cmd x64
 `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`。不要只安裝 Visual Studio Installer
 或 MSVC 可轉散發套件（Redistributable）。
 
-### wcap-x64.exe is running
+### wcap-tw-x64.exe is running
 
-從系統匣結束目前執行中的 wcap，再重新執行建置。建置腳本不會自動終止程式，以免中斷
-正在進行的錄影。
+從系統列結束目前執行中的 wcap-tw 或舊版 wcap，再重新執行建置。建置腳本不會自動終止
+程式，以免中斷正在進行的錄影。
 
 ### 找不到 rc.exe 或 fxc.exe
 
