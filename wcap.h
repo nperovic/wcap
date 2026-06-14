@@ -17,11 +17,7 @@
 #define WCAP_TITLE L"wcap-tw"
 #define WCAP_URL   L"https://github.com/nperovic/wcap-tw"
 
-#if defined(WCAP_GIT_INFO)
-#	define WCAP_CONFIG_TITLE "wcap-tw, " __DATE__ " [" WCAP_GIT_INFO "]"
-#else
-#	define WCAP_CONFIG_TITLE "wcap-tw, " __DATE__
-#endif
+#define WCAP_CONFIG_TITLE "wcap-tw"
 
 #if defined(_M_AMD64)
 #	define WCAP_LEGACY_CONFIG_FILENAME L"wcap-x64.ini"

@@ -8,6 +8,7 @@ Changelog
  * add an interactive window picker for tray-initiated window recording
  * center the interface language selector text
  * widen the settings dialog and match the language selector colors
+ * keep the settings window title free of internal Git build information
  * migrate legacy wcap configuration automatically
 
 ##### 2025.11.23
