@@ -26,6 +26,7 @@ Features
  * press any of previous combinations to stop recording
  * use the tray icon menu to start monitor, window, or region recording
  * stop the current recording from the tray icon menu
+ * query and control the running instance through a local named pipe
  * double-click the tray icon to change settings
  * video encoded using [H264/AVC][], [H265/HEVC][] or [AV1][], with 10-bit support for HEVC and AV1
  * audio encoded using [AAC][] or [FLAC][]
@@ -70,6 +71,68 @@ Capture of mouse cursor can be disabled only when using Windows 10 version 2004,
 
 On Windows 11 you can disable yellow recording borders, or rounded window corners. On Windows 11 24H2 version can enable secondary
 window capture, when they intersect main window in window-only capture mode - for popups & tool windows like "Open File" dialog.
+
+Local control interface
+=======================
+
+When the main `wcap-tw` instance is running, other programs can query its status, watch recording
+state changes, and request recording actions without starting another tray instance or registering
+hotkeys:
+
+```powershell
+wcap-tw -status
+wcap-tw -watch
+wcap-tw -stop
+wcap-tw -start window
+wcap-tw -start window --hwnd 0x001A0B9C
+wcap-tw -start monitor
+wcap-tw -start region
+```
+
+The control interface uses the local named pipe `\\.\pipe\wcap-tw.control`. The manual-reset named
+event `Local\wcap-tw.is-recording` is signaled while recording and reset after recording stops.
+`-status` writes one JSON object, while `-watch` keeps running and writes one JSON object per line
+(JSONL) whenever recording starts or stops.
+
+Exit codes:
+
+| Code | Meaning |
+| ---: | --- |
+| `0` | Success and currently recording, or a start/stop request succeeded |
+| `1` | Status query succeeded, but no recording is active |
+| `2` | The main `wcap-tw` instance is not running or the pipe cannot be reached |
+| `3` | IPC or command syntax error |
+| `4` | State conflict, such as starting while already recording |
+
+Window recordings use `yyyyMMdd_HHmmss_window title.mp4` filenames. Characters that Windows does
+not allow in filenames are replaced with underscores.
+
+PowerShell:
+
+```powershell
+$status = wcap-tw -status | ConvertFrom-Json
+
+if ($status.recording) {
+    "正在錄影：$($status.path)"
+    "模式：$($status.mode)"
+    "HWND：$($status.hwnd)"
+} else {
+    "沒有錄影"
+}
+```
+
+AutoHotkey v2:
+
+```ahk
+#Requires AutoHotkey v2.0
+
+shell := ComObject('WScript.Shell')
+exec := shell.Exec('wcap-tw -status')
+json := Trim(exec.StdOut.ReadAll())
+code := exec.ExitCode
+
+MsgBox('ExitCode: ' code '`n' json)
+```
 
 HEVC Software Encoding
 ======================

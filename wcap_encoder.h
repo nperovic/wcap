@@ -992,14 +992,22 @@ void Encoder_GetStats(Encoder* Encoder, DWORD* Bitrate, DWORD* LengthMsec, UINT6
 	MF_SINK_WRITER_STATISTICS Stats = { .cb = sizeof(Stats) };
 	HR(IMFSinkWriter_GetStatistics(Encoder->Writer, Encoder->VideoStreamIndex, &Stats));
 
-	*Bitrate = (DWORD)MFllMulDiv(8 * Stats.qwByteCountProcessed, MF_UNITS_PER_SECOND, 1000 * Stats.llLastTimestampProcessed, 0);
-	*LengthMsec = (DWORD)(Stats.llLastTimestampProcessed / 10000);
+	*Bitrate = 0;
+	*LengthMsec = 0;
 	*FileSize = Stats.qwByteCountProcessed;
+	if (Stats.llLastTimestampProcessed > 0)
+	{
+		*Bitrate = (DWORD)MFllMulDiv(8 * Stats.qwByteCountProcessed, MF_UNITS_PER_SECOND, 1000 * Stats.llLastTimestampProcessed, 0);
+		*LengthMsec = (DWORD)(Stats.llLastTimestampProcessed / 10000);
+	}
 
 	if (Encoder->AudioStreamIndex >= 0)
 	{
 		HR(IMFSinkWriter_GetStatistics(Encoder->Writer, Encoder->AudioStreamIndex, &Stats));
-		*Bitrate += (DWORD)MFllMulDiv(8 * Stats.qwByteCountProcessed, MF_UNITS_PER_SECOND, 1000 * Stats.llLastTimestampProcessed, 0);
+		if (Stats.llLastTimestampProcessed > 0)
+		{
+			*Bitrate += (DWORD)MFllMulDiv(8 * Stats.qwByteCountProcessed, MF_UNITS_PER_SECOND, 1000 * Stats.llLastTimestampProcessed, 0);
+		}
 		*FileSize += Stats.qwByteCountProcessed;
 	}
 }

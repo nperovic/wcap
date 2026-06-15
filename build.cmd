@@ -21,6 +21,12 @@ if "%ARGS:x64=%" neq "!ARGS!" (
 where /Q cl.exe || (
   set __VSCMD_ARG_NO_LOGO=1
   for /f "tokens=*" %%i in ('"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath') do set VS=%%i
+  if not "!VS!" equ "" if not exist "!VS!\Common7\Tools\VsDevCmd.bat" set VS=
+  if "!VS!" equ "" (
+    for /d %%i in ("C:\Program*") do (
+      if exist "%%~fi\Common7\Tools\VsDevCmd.bat" if exist "%%~fi\VC\Tools\MSVC" set VS=%%~fi
+    )
+  )
   if "!VS!" equ "" (
     echo ERROR: Visual Studio installation not found
     exit /b 1
@@ -61,7 +67,7 @@ call :fxc ConvertPass1           || exit /b 1
 call :fxc ConvertPass2           || exit /b 1
 
 rc.exe /nologo wcap.rc || exit /b 1
-cl.exe /nologo /utf-8 /std:c11 /experimental:c11atomics /W3 /WX wcap.c wcap.res /Fewcap-tw-%TARGET_ARCH%.exe /link /INCREMENTAL:NO /MANIFEST:EMBED /MANIFESTINPUT:wcap.manifest /SUBSYSTEM:WINDOWS || exit /b 1
+cl.exe /nologo /utf-8 /std:c11 /experimental:c11atomics /W3 /WX wcap.c wcap_tw_ipc.c wcap.res /Fewcap-tw-%TARGET_ARCH%.exe /link /INCREMENTAL:NO /MANIFEST:EMBED /MANIFESTINPUT:wcap.manifest /SUBSYSTEM:WINDOWS || exit /b 1
 del *.obj *.res >nul
 
 goto :eof

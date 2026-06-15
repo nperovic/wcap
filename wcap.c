@@ -3,6 +3,7 @@
 #include "wcap_audio_capture.h"
 #include "wcap_screen_capture.h"
 #include "wcap_encoder.h"
+#include "wcap_tw_ipc.h"
 
 #include <dxgi1_6.h>
 #include <d3d11.h>
@@ -11,6 +12,7 @@
 #include <shlwapi.h>
 #include <shellapi.h>
 #include <windowsx.h>
+#include <wchar.h>
 
 #pragma comment (lib, "ntdll")
 #pragma comment (lib, "kernel32")
@@ -46,6 +48,7 @@ __declspec(dllexport) DWORD NvOptimusEnablement = 1;
 #define WM_WCAP_STOP_CAPTURE    (WM_USER+2)
 #define WM_WCAP_TRAY_TITLE      (WM_USER+3)
 #define WM_WCAP_COMMAND         (WM_USER+4)
+#define WM_WCAP_IPC_COMMAND     (WM_APP+1)
 
 #define WCAP_AUDIO_CAPTURE_TIMER    1
 #define WCAP_AUDIO_CAPTURE_INTERVAL 100 // msec
@@ -103,6 +106,10 @@ static UINT64 gRecordingNextEncode;
 static UINT64 gRecordingNextTooltip;
 static EXECUTION_STATE gRecordingState;
 static WCHAR gRecordingPath[MAX_PATH];
+static WcapTwCaptureMode gCaptureMode;
+static HWND gCaptureWindow;
+static HMONITOR gCaptureMonitor;
+static RECT gCaptureRect;
 
 // when selecting rectangle to record
 static HMONITOR gRectMonitor;
@@ -130,6 +137,29 @@ static Config gConfig;
 static AudioCapture gAudio;
 static ScreenCapture gCapture;
 static Encoder gEncoder;
+
+static void WcapTwIpc_QueryStatus(WcapTwIpcStatus* Status)
+{
+	ZeroMemory(Status, sizeof(*Status));
+	Status->Recording = gRecording;
+	Status->Mode = gCaptureMode;
+	Status->Window = gCaptureWindow;
+	if (!gRecording)
+	{
+		return;
+	}
+
+	StrCpyNW(Status->Path, gRecordingPath, _countof(Status->Path));
+	Status->Width = gEncoder.OutputWidth;
+	Status->Height = gEncoder.OutputHeight;
+	Status->FramerateNum = gEncoder.FramerateNum;
+	Status->FramerateDen = gEncoder.FramerateDen;
+	Status->DroppedFrames = gRecordingDroppedFrames;
+	if (gEncoder.StartTime != 0 && gEncoder.VideoLastTime > gEncoder.StartTime)
+	{
+		Encoder_GetStats(&gEncoder, &Status->BitrateKbps, &Status->DurationMsec, &Status->SizeBytes);
+	}
+}
 
 static void ShowNotification(LPCWSTR Message, LPCWSTR Title, DWORD Flags)
 {
@@ -205,6 +235,23 @@ static void ShowFileInFolder(LPCWSTR Filename)
 	}
 }
 
+static void SanitizeFilenamePart(WCHAR* Text)
+{
+	for (WCHAR* Character = Text; *Character; Character++)
+	{
+		if (*Character < 0x20 || wcschr(L"<>:\"/\\|?*", *Character))
+		{
+			*Character = L'_';
+		}
+	}
+
+	size_t Length = wcslen(Text);
+	while (Length != 0 && (Text[Length - 1] == L' ' || Text[Length - 1] == L'.'))
+	{
+		Text[--Length] = 0;
+	}
+}
+
 static void StartRecording(ID3D11Device* Device, HWND Window)
 {
 	SYSTEMTIME Time;
@@ -221,7 +268,28 @@ static void StartRecording(ID3D11Device* Device, HWND Window)
 	}
 
 	WCHAR Filename[256];
-	StrFormat(Filename, L"%04u%02u%02u_%02u%02u%02u.mp4", Time.wYear, Time.wMonth, Time.wDay, Time.wHour, Time.wMinute, Time.wSecond);
+	if (Window)
+	{
+		WCHAR WindowTitle[128];
+		GetWindowTextW(Window, WindowTitle, _countof(WindowTitle));
+		WindowTitle[_countof(WindowTitle) - 1] = 0;
+		SanitizeFilenamePart(WindowTitle);
+		if (WindowTitle[0])
+		{
+			StrFormat(Filename, L"%04u%02u%02u_%02u%02u%02u_%ls.mp4",
+				Time.wYear, Time.wMonth, Time.wDay, Time.wHour, Time.wMinute, Time.wSecond, WindowTitle);
+		}
+		else
+		{
+			StrFormat(Filename, L"%04u%02u%02u_%02u%02u%02u.mp4",
+				Time.wYear, Time.wMonth, Time.wDay, Time.wHour, Time.wMinute, Time.wSecond);
+		}
+	}
+	else
+	{
+		StrFormat(Filename, L"%04u%02u%02u_%02u%02u%02u.mp4",
+			Time.wYear, Time.wMonth, Time.wDay, Time.wHour, Time.wMinute, Time.wSecond);
+	}
 
 	StrCpyW(gRecordingPath, gConfig.OutputFolder);
 	PathAppendW(gRecordingPath, Filename);
@@ -367,6 +435,12 @@ static void StopRecording(void)
 
 	UpdateTrayIcon(gIcon1);
 	UpdateTrayTitle(WCAP_TITLE);
+	WcapTwIpc_NotifyRecordingStopped(gRecordingPath);
+
+	gCaptureMode = WCAP_TW_CAPTURE_NONE;
+	gCaptureWindow = NULL;
+	gCaptureMonitor = NULL;
+	SetRectEmpty(&gCaptureRect);
 }
 
 static ID3D11Device* CreateDevice(void)
@@ -477,6 +551,16 @@ static void CaptureWindow(HWND Window)
 	}
 
 	StartRecording(Device, Window);
+	if (gRecording)
+	{
+		gCaptureMode = WCAP_TW_CAPTURE_WINDOW;
+		gCaptureWindow = Window;
+		gCaptureMonitor = NULL;
+		SetRectEmpty(&gCaptureRect);
+		WcapTwIpcStatus Status;
+		WcapTwIpc_QueryStatus(&Status);
+		WcapTwIpc_NotifyRecordingStarted(&Status);
+	}
 }
 
 typedef struct WindowAtPoint
@@ -623,6 +707,16 @@ static void CaptureMonitor(void)
 	}
 
 	StartRecording(Device, NULL);
+	if (gRecording)
+	{
+		gCaptureMode = WCAP_TW_CAPTURE_MONITOR;
+		gCaptureWindow = NULL;
+		gCaptureMonitor = Monitor;
+		SetRectEmpty(&gCaptureRect);
+		WcapTwIpcStatus Status;
+		WcapTwIpc_QueryStatus(&Status);
+		WcapTwIpc_NotifyRecordingStarted(&Status);
+	}
 }
 
 static void CaptureRegionInit(void)
@@ -773,6 +867,14 @@ static void CaptureRegion(void)
 
 	if (gRecording)
 	{
+		gCaptureMode = WCAP_TW_CAPTURE_REGION;
+		gCaptureWindow = NULL;
+		gCaptureMonitor = gRectMonitor;
+		gCaptureRect = Rect;
+		WcapTwIpcStatus Status;
+		WcapTwIpc_QueryStatus(&Status);
+		WcapTwIpc_NotifyRecordingStarted(&Status);
+
 		int X = Info.rcMonitor.left + Rect.left - (WCAP_RECT_BORDER + 1);
 		int Y = Info.rcMonitor.top + Rect.top - (WCAP_RECT_BORDER + 1);
 		int W = Rect.right - Rect.left + 2 * (WCAP_RECT_BORDER + 1);
@@ -874,12 +976,79 @@ static LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPA
 	}
 	else if (Message == WM_DESTROY)
 	{
+		WcapTwIpc_StopServer();
 		if (gRecording)
 		{
 			StopRecording();
 		}
 		RemoveTrayIcon(Window);
 		PostQuitMessage(0);
+		return 0;
+	}
+	else if (Message == WM_WCAP_IPC_COMMAND)
+	{
+		WcapTwIpcRequest* Request = (WcapTwIpcRequest*)LParam;
+		if (Request->Command == WCAP_TW_IPC_STATUS)
+		{
+			WcapTwIpcStatus Status;
+			WcapTwIpc_QueryStatus(&Status);
+			WcapTwIpc_CompleteRequest(Request, Status.Recording ? 0 : 1, &Status);
+		}
+		else if (Request->Command == WCAP_TW_IPC_STOP)
+		{
+			if (!gRecording)
+			{
+				WcapTwIpc_CompleteRequest(Request, 4, NULL);
+			}
+			else
+			{
+				StopRecording();
+				WcapTwIpc_CompleteRequest(Request, 0, NULL);
+			}
+		}
+		else if (Request->Command == WCAP_TW_IPC_START)
+		{
+			if (gRecording || gRecordingStarted || gRectContext)
+			{
+				WcapTwIpc_CompleteRequest(Request, 4, NULL);
+				return 0;
+			}
+
+			gRecordingStarted = TRUE;
+			if (Request->Mode == WCAP_TW_CAPTURE_WINDOW)
+			{
+				if (Request->Window == NULL || !IsWindow(Request->Window))
+				{
+					gRecordingStarted = FALSE;
+					WcapTwIpc_CompleteRequest(Request, 3, NULL);
+					return 0;
+				}
+				CaptureWindow(Request->Window);
+			}
+			else if (Request->Mode == WCAP_TW_CAPTURE_MONITOR)
+			{
+				CaptureMonitor();
+			}
+			else if (Request->Mode == WCAP_TW_CAPTURE_REGION)
+			{
+				CaptureRegionInit();
+			}
+			else
+			{
+				gRecordingStarted = FALSE;
+				WcapTwIpc_CompleteRequest(Request, 3, NULL);
+				return 0;
+			}
+			gRecordingStarted = FALSE;
+
+			BOOL Started = gRecording ||
+				(Request->Mode == WCAP_TW_CAPTURE_REGION && gRectContext != NULL);
+			WcapTwIpc_CompleteRequest(Request, Started ? 0 : 3, NULL);
+		}
+		else
+		{
+			WcapTwIpc_CompleteRequest(Request, 3, NULL);
+		}
 		return 0;
 	}
 	else if (Message == WM_CLOSE)
@@ -1619,6 +1788,11 @@ int WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR cmdline, int cmdshow)
 void WinMainCRTStartup()
 #endif
 {
+	if (WcapTwIpc_RunClientCommandLine())
+	{
+		ExitProcess(3);
+	}
+
 	WNDCLASSEXW WindowClass =
 	{
 		.cbSize = sizeof(WindowClass),
@@ -1708,6 +1882,14 @@ void WinMainCRTStartup()
 	if (!gWindow)
 	{
 		ExitProcess(0);
+	}
+	if (!WcapTwIpc_Init(gWindow, WM_WCAP_IPC_COMMAND) || !WcapTwIpc_StartServer())
+	{
+		MessageBoxW(NULL,
+			L"無法啟動本機控制介面。\n\nCannot start the local control interface.",
+			WCAP_TITLE, MB_ICONERROR);
+		DestroyWindow(gWindow);
+		ExitProcess(3);
 	}
 	if (!EnableHotKeys())
 	{
